@@ -54,7 +54,7 @@ impl SharedChild {
         drop(status);
 
         // Use libc::waitid() to block without reaping the child. Not reaping
-        // means its safe for another thread to call kill() while we're here,
+        // means it's safe for another thread to call kill() while we're here,
         // without racing against another process reusing the PID. Having only
         // one thread really waiting on the child at a time is important,
         // because POSIX doesn't guarantee much about what happens when multiple
@@ -63,9 +63,9 @@ impl SharedChild {
         waitid_nowait(child_pid)?;
 
         // After waitid() returns, the child has exited. We take the status lock
-        // again knowing that wait() isn't going to block for very long, and
-        // after we've reaped the child we put ourselves in the Exited state and
-        // signal other waiters.
+        // again knowing that Child::wait() isn't going to block for very long,
+        // and after we've reaped the child we put ourselves in the Exited state
+        // and signal other waiters.
         let mut status = self.status_lock.lock().unwrap();
         let exit_status = self.child.lock().unwrap().wait()?;
         *status = Exited(exit_status);
