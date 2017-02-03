@@ -72,6 +72,31 @@ impl SharedChild {
         self.status_condvar.notify_all();
         Ok(exit_status)
     }
+
+    pub fn try_wait(&self) -> io::Result<Option<ExitStatus>> {
+        let mut status = self.status_lock.lock().unwrap();
+        let child_pid;
+
+        // Unlike wait() above, we don't loop on the Condvar here. If the status
+        // is Waiting or Exited, we return immediately. However, if the status
+        // is NotWaiting, we'll do a non-blocking wait below, in case the child
+        // has already exited.
+        match *status {
+            NotWaiting(pid) => child_pid = pid,
+            Waiting => return Ok(None),
+            Exited(exit_status) => return Ok(Some(exit_status)),
+        };
+
+        // No one is waiting on the child. Check to see if it's already exited.
+        // If it has, put ourselves in the Exited state. (There can't be any
+        // other waiters to signal, because the state was NotWaiting when we
+        // started, and we're still holding the status lock.)
+        let maybe_status = waitpid_nohang(child_pid)?;
+        if let Some(exit_status) = maybe_status {
+            *status = Exited(exit_status)
+        }
+        Ok(maybe_status)
+    }
 }
 
 enum ChildStatus {
@@ -103,8 +128,24 @@ fn waitid_nowait(pid: u32) -> io::Result<()> {
     }
 }
 
+// This reaps the child if it's already exited, but doesn't block otherwise.
+fn waitpid_nohang(pid: u32) -> io::Result<Option<ExitStatus>> {
+    let mut status = 0;
+    let waitpid_ret = unsafe { libc::waitpid(pid as libc::pid_t, &mut status, libc::WNOHANG) };
+    if waitpid_ret < 0 {
+        // EINTR is not possible with WNOHANG, so no need to retry.
+        Err(io::Error::last_os_error())
+    } else if waitpid_ret == 0 {
+        Ok(None)
+    } else {
+        use std::os::unix::process::ExitStatusExt;
+        Ok(Some(ExitStatus::from_raw(status)))
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use std;
     use std::process::Command;
     use super::*;
 
@@ -113,5 +154,23 @@ mod tests {
         let child = SharedChild::new(Command::new("true").spawn().unwrap());
         let status = child.wait().unwrap();
         assert_eq!(status.code().unwrap(), 0);
+    }
+
+    #[test]
+    fn test_try_wait() {
+        // This is a hack to check that try_wait will clean up a child that has
+        // already exited. 100 milliseconds is "probably enough time". We could
+        // try to do something fancy like blocking on pipes to see when the
+        // child exits, but that might actually be less reliable, depending on
+        // the order in which the OS chooses to do things.
+        let child = SharedChild::new(Command::new("sleep").arg("0.1").spawn().unwrap());
+        // Check immediately, and make sure the child hasn't exited yet.
+        let maybe_status = child.try_wait().unwrap();
+        assert_eq!(maybe_status, None);
+        // Then sleep for a while and check again, after the child is supposed
+        // to have exited.
+        std::thread::sleep(std::time::Duration::from_millis(200));
+        let maybe_status = child.try_wait().unwrap();
+        assert!(maybe_status.is_some());
     }
 }
