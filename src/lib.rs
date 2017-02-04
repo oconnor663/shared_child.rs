@@ -25,6 +25,8 @@ impl SharedChild {
         }
     }
 
+    /// Wait for the child to exit, blocking the current thread, and return its
+    /// exit status.
     pub fn wait(&self) -> io::Result<ExitStatus> {
         let mut status = self.status_lock.lock().unwrap();
         let child_pid;
@@ -73,6 +75,8 @@ impl SharedChild {
         Ok(exit_status)
     }
 
+    /// Return the child's exit status if it has already exited. If the child is
+    /// still running, return `Ok(None)`.
     pub fn try_wait(&self) -> io::Result<Option<ExitStatus>> {
         let mut status = self.status_lock.lock().unwrap();
         let child_pid;
@@ -96,6 +100,30 @@ impl SharedChild {
             *status = Exited(exit_status)
         }
         Ok(maybe_status)
+    }
+
+    /// Send a kill signal to the child, wait for it to exit, and return its
+    /// exit status. This waits on the child to exit completely, to avoid
+    /// leaving a zombie process on Unix.
+    ///
+    /// Because this waits, it's possible for this function to hang, if it fails
+    /// to kill the child. That usually means that the child is blocked in
+    /// kernel mode, for example on a FUSE filesystem call that is not
+    /// responding. Callers that want to handle that situation somehow should
+    /// either call `kill` in a background thread or use a different
+    /// implementation that does not wait (though not waiting risks leaving a
+    /// zombie process and leaking system resources).
+    pub fn kill(&self) -> io::Result<ExitStatus> {
+        let status = self.status_lock.lock().unwrap();
+        if let Exited(exit_status) = *status {
+            return Ok(exit_status);
+        }
+        // The child is still running. Kill it.
+        self.child.lock().unwrap().kill()?;
+        // Now clean it up, to avoid leaving a zombie on Unix. Drop the
+        // status lock first, because wait() will retake it.
+        drop(status);
+        self.wait()
     }
 }
 
@@ -129,6 +157,8 @@ fn waitid_nowait(pid: u32) -> io::Result<()> {
 }
 
 // This reaps the child if it's already exited, but doesn't block otherwise.
+// There's an unstable Child::try_wait() function in libstd right now, and when
+// that stabilizes we can probably delete this.
 fn waitpid_nohang(pid: u32) -> io::Result<Option<ExitStatus>> {
     let mut status = 0;
     let waitpid_ret = unsafe { libc::waitpid(pid as libc::pid_t, &mut status, libc::WNOHANG) };
@@ -172,5 +202,15 @@ mod tests {
         std::thread::sleep(std::time::Duration::from_millis(200));
         let maybe_status = child.try_wait().unwrap();
         assert!(maybe_status.is_some());
+    }
+
+    #[test]
+    fn test_kill() {
+        let child = SharedChild::new(Command::new("sleep").arg("1000").spawn().unwrap());
+        // Check immediately, and make sure the child hasn't exited yet.
+        let maybe_status = child.try_wait().unwrap();
+        assert_eq!(maybe_status, None);
+        // Now kill the child.
+        child.kill().unwrap();
     }
 }
