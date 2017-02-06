@@ -2,8 +2,10 @@
 name = "shared_child"
 version = "0.1.0"
 authors = ["jacko"]
-description = "a library for using child processes from multiple threads"
 license = "MIT"
+repository = "https://github.com/oconnor663/shared_child.rs"
+documentation = "https://docs.rs/shared_child"
+description = "a library for using child processes from multiple threads"
 
 [dependencies]
 libc = "^0.2.20"
