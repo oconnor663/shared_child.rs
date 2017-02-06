@@ -28,12 +28,20 @@ use std::io;
 use std::process::{Command, Child, ExitStatus};
 use std::sync::{Condvar, Mutex};
 
+#[cfg(not(windows))]
+#[path="unix.rs"]
+mod sys;
+#[cfg(windows)]
+#[path="windows.rs"]
+mod sys;
+
 pub struct SharedChild {
     // This lock provides shared access to kill() and wait(), though sometimes
     // we use libc::waitpid() to reap the child instead. This is a *shared*
     // child, so we never hold onto this lock for a blocking wait.
     child: Mutex<Child>,
     id: u32,
+    handle: sys::Handle,
 
     // Threads doing blocking waits will wait on this condvar, and the first
     // waiter will call libc::waitid(), to avoid racing against kill().
@@ -47,6 +55,7 @@ impl SharedChild {
         let child = command.spawn()?;
         Ok(SharedChild {
             id: child.id(),
+            handle: sys::get_handle(&child),
             child: Mutex::new(child),
             status_lock: Mutex::new(NotWaiting),
             status_condvar: Condvar::new(),
@@ -92,7 +101,7 @@ impl SharedChild {
         // because POSIX doesn't guarantee much about what happens when multiple
         // threads wait at the same time:
         // http://pubs.opengroup.org/onlinepubs/9699919799/functions/V2_chap02.html#tag_15_13
-        waitid_nowait(self.id)?;
+        sys::wait_without_reaping(&self.handle)?;
 
         // After waitid() returns, the child has exited. We take the status lock
         // again knowing that Child::wait() isn't going to block for very long,
@@ -124,7 +133,7 @@ impl SharedChild {
         // If it has, put ourselves in the Exited state. (There can't be any
         // other waiters to signal, because the state was NotWaiting when we
         // started, and we're still holding the status lock.)
-        let maybe_status = waitpid_nohang(self.id)?;
+        let maybe_status = sys::try_wait(&self.handle)?;
         if let Some(exit_status) = maybe_status {
             *status = Exited(exit_status)
         }
@@ -163,44 +172,6 @@ enum ChildStatus {
 }
 
 use ChildStatus::*;
-
-// This blocks until a child exits, without reaping the child.
-fn waitid_nowait(pid: u32) -> io::Result<()> {
-    loop {
-        let ret = unsafe {
-            let mut siginfo = std::mem::uninitialized();
-            libc::waitid(libc::P_PID,
-                         pid as libc::id_t,
-                         &mut siginfo,
-                         libc::WEXITED | libc::WNOWAIT)
-        };
-        if ret == 0 {
-            return Ok(());
-        }
-        let error = io::Error::last_os_error();
-        if error.kind() != io::ErrorKind::Interrupted {
-            return Err(error);
-        }
-        // We were interrupted. Loop and retry.
-    }
-}
-
-// This reaps the child if it's already exited, but doesn't block otherwise.
-// There's an unstable Child::try_wait() function in libstd right now, and when
-// that stabilizes we can probably delete this.
-fn waitpid_nohang(pid: u32) -> io::Result<Option<ExitStatus>> {
-    let mut status = 0;
-    let waitpid_ret = unsafe { libc::waitpid(pid as libc::pid_t, &mut status, libc::WNOHANG) };
-    if waitpid_ret < 0 {
-        // EINTR is not possible with WNOHANG, so no need to retry.
-        Err(io::Error::last_os_error())
-    } else if waitpid_ret == 0 {
-        Ok(None)
-    } else {
-        use std::os::unix::process::ExitStatusExt;
-        Ok(Some(ExitStatus::from_raw(status)))
-    }
-}
 
 #[cfg(test)]
 mod tests {
