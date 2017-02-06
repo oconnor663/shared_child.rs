@@ -33,6 +33,7 @@ pub struct SharedChild {
     // we use libc::waitpid() to reap the child instead. This is a *shared*
     // child, so we never hold onto this lock for a blocking wait.
     child: Mutex<Child>,
+    id: u32,
 
     // Threads doing blocking waits will wait on this condvar, and the first
     // waiter will call libc::waitid(), to avoid racing against kill().
@@ -42,27 +43,29 @@ pub struct SharedChild {
 
 impl SharedChild {
     /// Spawn a new `SharedChild` from a `std::process::Command`.
-    pub fn spawn(command: &mut Command) -> io::Result<SharedChild>
-    {
+    pub fn spawn(command: &mut Command) -> io::Result<SharedChild> {
         let child = command.spawn()?;
         Ok(SharedChild {
-            status_lock: Mutex::new(NotWaiting(child.id())),
-            status_condvar: Condvar::new(),
+            id: child.id(),
             child: Mutex::new(child),
+            status_lock: Mutex::new(NotWaiting),
+            status_condvar: Condvar::new(),
         })
+    }
+
+    pub fn id(&self) -> u32 {
+        self.id
     }
 
     /// Wait for the child to exit, blocking the current thread, and return its
     /// exit status.
     pub fn wait(&self) -> io::Result<ExitStatus> {
         let mut status = self.status_lock.lock().unwrap();
-        let child_pid;
         loop {
             match *status {
-                NotWaiting(pid) => {
+                NotWaiting => {
                     // No one is waiting on the child yet. That means we need to
                     // do it ourselves. Break out of the loop.
-                    child_pid = pid;
                     break;
                 }
                 Waiting => {
@@ -89,7 +92,7 @@ impl SharedChild {
         // because POSIX doesn't guarantee much about what happens when multiple
         // threads wait at the same time:
         // http://pubs.opengroup.org/onlinepubs/9699919799/functions/V2_chap02.html#tag_15_13
-        waitid_nowait(child_pid)?;
+        waitid_nowait(self.id)?;
 
         // After waitid() returns, the child has exited. We take the status lock
         // again knowing that Child::wait() isn't going to block for very long,
@@ -106,14 +109,13 @@ impl SharedChild {
     /// still running, return `Ok(None)`.
     pub fn try_wait(&self) -> io::Result<Option<ExitStatus>> {
         let mut status = self.status_lock.lock().unwrap();
-        let child_pid;
 
         // Unlike wait() above, we don't loop on the Condvar here. If the status
         // is Waiting or Exited, we return immediately. However, if the status
         // is NotWaiting, we'll do a non-blocking wait below, in case the child
         // has already exited.
         match *status {
-            NotWaiting(pid) => child_pid = pid,
+            NotWaiting => {}
             Waiting => return Ok(None),
             Exited(exit_status) => return Ok(Some(exit_status)),
         };
@@ -122,7 +124,7 @@ impl SharedChild {
         // If it has, put ourselves in the Exited state. (There can't be any
         // other waiters to signal, because the state was NotWaiting when we
         // started, and we're still holding the status lock.)
-        let maybe_status = waitpid_nohang(child_pid)?;
+        let maybe_status = waitpid_nohang(self.id)?;
         if let Some(exit_status) = maybe_status {
             *status = Exited(exit_status)
         }
@@ -155,7 +157,7 @@ impl SharedChild {
 }
 
 enum ChildStatus {
-    NotWaiting(u32),
+    NotWaiting,
     Waiting,
     Exited(ExitStatus),
 }
@@ -209,6 +211,7 @@ mod tests {
     #[test]
     fn test_wait() {
         let child = SharedChild::spawn(&mut Command::new("true")).unwrap();
+        assert!(child.id() > 0);
         let status = child.wait().unwrap();
         assert_eq!(status.code().unwrap(), 0);
     }
