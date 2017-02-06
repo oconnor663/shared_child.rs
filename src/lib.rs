@@ -25,7 +25,7 @@
 extern crate libc;
 
 use std::io;
-use std::process::{Child, ExitStatus};
+use std::process::{Command, Child, ExitStatus};
 use std::sync::{Condvar, Mutex};
 
 pub struct SharedChild {
@@ -41,12 +41,15 @@ pub struct SharedChild {
 }
 
 impl SharedChild {
-    pub fn new(child: Child) -> SharedChild {
-        SharedChild {
+    /// Spawn a new `SharedChild` from a `std::process::Command`.
+    pub fn spawn(command: &mut Command) -> io::Result<SharedChild>
+    {
+        let child = command.spawn()?;
+        Ok(SharedChild {
             status_lock: Mutex::new(NotWaiting(child.id())),
             status_condvar: Condvar::new(),
             child: Mutex::new(child),
-        }
+        })
     }
 
     /// Wait for the child to exit, blocking the current thread, and return its
@@ -205,7 +208,7 @@ mod tests {
 
     #[test]
     fn test_wait() {
-        let child = SharedChild::new(Command::new("true").spawn().unwrap());
+        let child = SharedChild::spawn(&mut Command::new("true")).unwrap();
         let status = child.wait().unwrap();
         assert_eq!(status.code().unwrap(), 0);
     }
@@ -217,7 +220,7 @@ mod tests {
         // try to do something fancy like blocking on pipes to see when the
         // child exits, but that might actually be less reliable, depending on
         // the order in which the OS chooses to do things.
-        let child = SharedChild::new(Command::new("sleep").arg("0.1").spawn().unwrap());
+        let child = SharedChild::spawn(Command::new("sleep").arg("0.1")).unwrap();
         // Check immediately, and make sure the child hasn't exited yet.
         let maybe_status = child.try_wait().unwrap();
         assert_eq!(maybe_status, None);
@@ -230,7 +233,7 @@ mod tests {
 
     #[test]
     fn test_kill() {
-        let child = SharedChild::new(Command::new("sleep").arg("1000").spawn().unwrap());
+        let child = SharedChild::spawn(Command::new("sleep").arg("1000")).unwrap();
         // Check immediately, and make sure the child hasn't exited yet.
         let maybe_status = child.try_wait().unwrap();
         assert_eq!(maybe_status, None);
