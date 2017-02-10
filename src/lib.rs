@@ -37,16 +37,15 @@ mod sys;
 
 pub struct SharedChild {
     // This lock provides shared access to kill() and wait(), though sometimes
-    // we use libc::waitpid() to reap the child instead. This is a *shared*
-    // child, so we never hold onto this lock for a blocking wait.
+    // we use libc::waitpid() to reap the child instead.
     child: Mutex<Child>,
     id: u32,
     handle: sys::Handle,
 
-    // Threads doing blocking waits will wait on this condvar, and the first
-    // waiter will call libc::waitid(), to avoid racing against kill().
-    status_lock: Mutex<ChildStatus>,
-    status_condvar: Condvar,
+    // When there are multiple waiting threads, one of them will actually wait
+    // on the child, and the rest will block on this condvar.
+    state_lock: Mutex<ChildState>,
+    state_condvar: Condvar,
 }
 
 impl SharedChild {
@@ -57,8 +56,8 @@ impl SharedChild {
             id: child.id(),
             handle: sys::get_handle(&child),
             child: Mutex::new(child),
-            status_lock: Mutex::new(NotWaiting),
-            status_condvar: Condvar::new(),
+            state_lock: Mutex::new(NotWaiting),
+            state_condvar: Condvar::new(),
         })
     }
 
@@ -69,55 +68,71 @@ impl SharedChild {
     /// Wait for the child to exit, blocking the current thread, and return its
     /// exit status.
     pub fn wait(&self) -> io::Result<ExitStatus> {
-        let mut status = self.status_lock.lock().unwrap();
+        let mut state = self.state_lock.lock().unwrap();
         loop {
-            match *status {
+            match *state {
                 NotWaiting => {
-                    // No one is waiting on the child yet. That means we need to
-                    // do it ourselves. Break out of the loop.
+                    // Either no one is waiting on the child yet, or a previous
+                    // waiter failed. That means we need to do it ourselves.
+                    // Break out of this loop.
                     break;
                 }
                 Waiting => {
-                    // Another thread is already waiting on the child. We wait
-                    // for it to signal us on the condvar, then match again,
-                    // until we get Exited. Spurious wakeups could bring us here
-                    // multiple times though, see the Condvar docs.
-                    status = self.status_condvar.wait(status).unwrap();
+                    // Another thread is already waiting on the child. We'll
+                    // block until it signal us on the condvar, then loop again.
+                    // Spurious wakeups could bring us here multiple times
+                    // though, see the Condvar docs.
+                    state = self.state_condvar.wait(state).unwrap();
                 }
                 Exited(exit_status) => return Ok(exit_status),
             }
         }
 
-        // If we get here, we're the thread responsible for waiting on the
-        // child. Put ourselves in the Waiting state and then release the status
-        // lock, so that calls to try_wait/kill can go through while we wait.
-        *status = Waiting;
-        drop(status);
+        // If we get here, we have the state lock, and we're the thread
+        // responsible for waiting on the child. Set the state to Waiting and
+        // then release the state lock, so that other threads can observe it
+        // while we block. Afterwards we must leave the Waiting state before
+        // this function exits, or other waiters will deadlock.
+        *state = Waiting;
+        drop(state);
 
-        // Use libc::waitid() to block without reaping the child. Not reaping
-        // means it's safe for another thread to call kill() while we're here,
-        // without racing against another process reusing the PID. Having only
-        // one thread really waiting on the child at a time is important,
+        // Block until the child exits without reaping it. (On Unix, that means
+        // we need to call libc::waitid with the WNOWAIT flag. On Windows
+        // waiting never reaps.) That makes it safe for another thread to kill
+        // while we're here, without racing against some process reusing the
+        // child's PID. Having only one thread in this section is important,
         // because POSIX doesn't guarantee much about what happens when multiple
-        // threads wait at the same time:
+        // threads wait on a child at the same time:
         // http://pubs.opengroup.org/onlinepubs/9699919799/functions/V2_chap02.html#tag_15_13
-        sys::wait_without_reaping(&self.handle)?;
+        let noreap_result = sys::wait_without_reaping(&self.handle);
 
-        // After waitid() returns, the child has exited. We take the status lock
-        // again knowing that Child::wait() isn't going to block for very long,
-        // and after we've reaped the child we put ourselves in the Exited state
-        // and signal other waiters.
-        let mut status = self.status_lock.lock().unwrap();
-        let exit_status = self.child.lock().unwrap().wait()?;
-        *status = Exited(exit_status);
-        self.status_condvar.notify_all();
-        Ok(exit_status)
+        // Now either we hit an error, or the child has exited and needs to be
+        // reaped. Retake the state lock and handle all the different exit
+        // cases. No matter what happened/happens, we'll leave the Waiting state
+        // and signal the state condvar.
+        let mut state = self.state_lock.lock().unwrap();
+        let final_result = noreap_result.and_then(|_| {
+            // Reap the child. Errors only short-circuit this closure.
+            if let Some(exit_status) = sys::try_wait(&self.handle)? {
+                Ok(exit_status)
+            } else {
+                // This should never happen, unless waitid lied to us.
+                Err(io::Error::new(io::ErrorKind::Other, "blocking wait after child exit"))
+            }
+        });
+        *state = if let Ok(exit_status) = final_result {
+            Exited(exit_status)
+        } else {
+            NotWaiting
+        };
+        self.state_condvar.notify_all();
+        final_result
     }
 
     /// Return the child's exit status if it has already exited. If the child is
     /// still running, return `Ok(None)`.
     pub fn try_wait(&self) -> io::Result<Option<ExitStatus>> {
-        let mut status = self.status_lock.lock().unwrap();
+        let mut status = self.state_lock.lock().unwrap();
 
         // Unlike wait() above, we don't loop on the Condvar here. If the status
         // is Waiting or Exited, we return immediately. However, if the status
@@ -133,11 +148,12 @@ impl SharedChild {
         // If it has, put ourselves in the Exited state. (There can't be any
         // other waiters to signal, because the state was NotWaiting when we
         // started, and we're still holding the status lock.)
-        let maybe_status = sys::try_wait(&self.handle)?;
-        if let Some(exit_status) = maybe_status {
-            *status = Exited(exit_status)
+        if let Some(exit_status) = sys::try_wait(&self.handle)? {
+            *status = Exited(exit_status);
+            Ok(Some(exit_status))
+        } else {
+            Ok(None)
         }
-        Ok(maybe_status)
     }
 
     /// Send a kill signal to the child, wait for it to exit, and return its
@@ -147,12 +163,9 @@ impl SharedChild {
     /// Because this waits, it's possible for this function to hang, if it fails
     /// to kill the child. That usually means that the child is blocked in
     /// kernel mode, for example on a FUSE filesystem call that is not
-    /// responding. Callers that want to handle that situation somehow should
-    /// either call `kill` in a background thread or use a different
-    /// implementation that does not wait (though not waiting risks leaving a
-    /// zombie process and leaking system resources).
+    /// responding.
     pub fn kill(&self) -> io::Result<ExitStatus> {
-        let status = self.status_lock.lock().unwrap();
+        let status = self.state_lock.lock().unwrap();
         if let Exited(exit_status) = *status {
             return Ok(exit_status);
         }
@@ -165,18 +178,19 @@ impl SharedChild {
     }
 }
 
-enum ChildStatus {
+enum ChildState {
     NotWaiting,
     Waiting,
     Exited(ExitStatus),
 }
 
-use ChildStatus::*;
+use ChildState::*;
 
 #[cfg(test)]
 mod tests {
     use std;
     use std::process::Command;
+    use std::sync::Arc;
     use super::*;
 
     #[test]
@@ -213,5 +227,19 @@ mod tests {
         assert_eq!(maybe_status, None);
         // Now kill the child.
         child.kill().unwrap();
+    }
+
+    #[test]
+    fn test_many_waiters() {
+        let child = Arc::new(SharedChild::spawn(Command::new("sleep").arg("1000")).unwrap());
+        let mut threads = Vec::new();
+        for _ in 0..10 {
+            let clone = child.clone();
+            threads.push(std::thread::spawn(move || clone.wait()));
+        }
+        child.kill().unwrap();
+        for thread in threads {
+            thread.join().unwrap().unwrap();
+        }
     }
 }
