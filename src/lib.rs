@@ -22,8 +22,6 @@
 //! - [Crate](https://crates.io/crates/shared_child)
 //! - [Repo](https://github.com/oconnor663/shared_child.rs)
 
-extern crate libc;
-
 use std::io;
 use std::process::{Command, Child, ExitStatus};
 use std::sync::{Condvar, Mutex};
