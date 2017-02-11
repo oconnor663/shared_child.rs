@@ -181,9 +181,21 @@ mod tests {
     use std::sync::Arc;
     use super::*;
 
+    fn true_cmd() -> Command {
+        let mut cmd = Command::new("python");
+        cmd.arg("-c").arg("");
+        cmd
+    }
+
+    fn sleep_cmd<T: Into<f64>>(secs: T) -> Command {
+        let mut cmd = Command::new("python");
+        cmd.arg("-c").arg(format!("import time; time.sleep({})", secs.into()));
+        cmd
+    }
+
     #[test]
     fn test_wait() {
-        let child = SharedChild::spawn(&mut Command::new("true")).unwrap();
+        let child = SharedChild::spawn(&mut true_cmd()).unwrap();
         assert!(child.id() > 0);
         let status = child.wait().unwrap();
         assert_eq!(status.code().unwrap(), 0);
@@ -196,7 +208,7 @@ mod tests {
         // try to do something fancy like blocking on pipes to see when the
         // child exits, but that might actually be less reliable, depending on
         // the order in which the OS chooses to do things.
-        let child = SharedChild::spawn(Command::new("sleep").arg("0.1")).unwrap();
+        let child = SharedChild::spawn(&mut sleep_cmd(0.1)).unwrap();
         // Check immediately, and make sure the child hasn't exited yet.
         let maybe_status = child.try_wait().unwrap();
         assert_eq!(maybe_status, None);
@@ -205,11 +217,12 @@ mod tests {
         std::thread::sleep(std::time::Duration::from_millis(200));
         let maybe_status = child.try_wait().unwrap();
         assert!(maybe_status.is_some());
+        assert!(maybe_status.unwrap().success());
     }
 
     #[test]
     fn test_kill() {
-        let child = SharedChild::spawn(Command::new("sleep").arg("1000")).unwrap();
+        let child = SharedChild::spawn(&mut sleep_cmd(1_000_000)).unwrap();
         // Check immediately, and make sure the child hasn't exited yet.
         let maybe_status = child.try_wait().unwrap();
         assert_eq!(maybe_status, None);
@@ -219,7 +232,7 @@ mod tests {
 
     #[test]
     fn test_many_waiters() {
-        let child = Arc::new(SharedChild::spawn(Command::new("sleep").arg("1000")).unwrap());
+        let child = Arc::new(SharedChild::spawn(&mut sleep_cmd(1_000_000)).unwrap());
         let mut threads = Vec::new();
         for _ in 0..10 {
             let clone = child.clone();
