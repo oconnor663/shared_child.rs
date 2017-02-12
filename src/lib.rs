@@ -21,6 +21,41 @@
 //! - [Docs](https://docs.rs/shared_child)
 //! - [Crate](https://crates.io/crates/shared_child)
 //! - [Repo](https://github.com/oconnor663/shared_child.rs)
+//!
+//! # Example
+//!
+//! ```rust
+//! # fn run() -> std::io::Result<()> {
+//! use shared_child::SharedChild;
+//! use std::process::Command;
+//! use std::sync::Arc;
+//!
+//! // Spawn a child that will just sleep for a long time,
+//! // and put it in an Arc to share between threads.
+//! let mut command = Command::new("python");
+//! command.arg("-c").arg("import time; time.sleep(1000000000)");
+//! let shared_child = SharedChild::spawn(&mut command)?;
+//! let child_arc = Arc::new(shared_child);
+//!
+//! // On one thread, wait on the child process.
+//! let child_arc_clone = child_arc.clone();
+//! let thread = std::thread::spawn(move || {
+//!     child_arc_clone.wait()
+//! });
+//!
+//! // While the other thread is waiting, kill the child process.
+//! // This wouldn't be possible with e.g. an Arc<Mutex<Child>>
+//! // from the standard library, because waiting thread would be
+//! // holding the mutex.
+//! child_arc.kill()?;
+//!
+//! // Join the waiting thread and get the exit status.
+//! let exit_status = thread.join().unwrap()?;
+//! assert!(!exit_status.success());
+//! # Ok(())
+//! # }
+//! # fn main() { run().unwrap(); }
+//! ```
 
 use std::io;
 use std::process::{Command, Child, ExitStatus};
@@ -59,6 +94,7 @@ impl SharedChild {
         })
     }
 
+    /// Return the child process ID.
     pub fn id(&self) -> u32 {
         self.id
     }
