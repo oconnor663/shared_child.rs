@@ -22,6 +22,14 @@
 //! - [Crate](https://crates.io/crates/shared_child)
 //! - [Repo](https://github.com/oconnor663/shared_child.rs)
 //!
+//! Compatibility note: The `libc` crate doesn't currently support `waitid` on
+//! NetBSD or OpenBSD, or on older versions of OSX. There [might also
+//! be](https://bugs.python.org/msg167016) some version of OSX where the
+//! `waitid` function exists but is broken. We can add a "best effort"
+//! workaround using `waitpid` for these platforms as we run into them. Please
+//! [file an issue](https://github.com/oconnor663/shared_child.rs/issues/new) if
+//! you hit this.
+//!
 //! # Example
 //!
 //! ```rust
