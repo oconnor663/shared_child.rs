@@ -179,7 +179,7 @@ mod tests {
     use std;
     use std::process::Command;
     use std::sync::Arc;
-    use super::*;
+    use super::{SharedChild, sys};
 
     fn true_cmd() -> Command {
         let mut cmd = Command::new("python");
@@ -238,5 +238,18 @@ mod tests {
         for thread in threads {
             thread.join().unwrap().unwrap();
         }
+    }
+
+    #[test]
+    fn test_waitid_after_exit_doesnt_hang() {
+        // There are ominous reports (https://bugs.python.org/issue10812) of a
+        // broken waitid implementation on OSX, which might hang forever if it
+        // tries to wait on a child that's already exited.
+        let child = true_cmd().spawn().unwrap();
+        let handle = sys::get_handle(&child);
+        sys::wait_without_reaping(&handle).unwrap();
+        // At this point the child has definitely exited. Wait again to test
+        // that a second wait doesn't block.
+        sys::wait_without_reaping(&handle).unwrap();
     }
 }
