@@ -156,25 +156,15 @@ impl SharedChild {
         }
     }
 
-    /// Send a kill signal to the child, wait for it to exit, and return its
-    /// exit status. This waits on the child to exit completely, to avoid
-    /// leaving a zombie process on Unix.
-    ///
-    /// Because this waits, it's possible for this function to hang, if it fails
-    /// to kill the child. That usually means that the child is blocked in
-    /// kernel mode, for example on a FUSE filesystem call that is not
-    /// responding.
-    pub fn kill(&self) -> io::Result<ExitStatus> {
+    /// Send a kill signal to the child. You should call `wait` afterwards to
+    /// avoid leaving a zombie on Unix.
+    pub fn kill(&self) -> io::Result<()> {
         let status = self.state_lock.lock().unwrap();
-        if let Exited(exit_status) = *status {
-            return Ok(exit_status);
+        if let Exited(_) = *status {
+            return Ok(());
         }
         // The child is still running. Kill it.
-        self.child.lock().unwrap().kill()?;
-        // Now clean it up, to avoid leaving a zombie on Unix. Drop the
-        // status lock first, because wait() will retake it.
-        drop(status);
-        self.wait()
+        self.child.lock().unwrap().kill()
     }
 }
 
