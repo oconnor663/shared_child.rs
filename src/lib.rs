@@ -187,52 +187,48 @@ mod tests {
         cmd
     }
 
-    fn sleep_cmd<T: Into<f64>>(secs: T) -> Command {
+    fn sleep_forever_cmd() -> Command {
         let mut cmd = Command::new("python");
-        cmd.arg("-c").arg(format!("import time; time.sleep({})", secs.into()));
+        cmd.arg("-c").arg("import time; time.sleep(1000000000)");
         cmd
     }
 
     #[test]
     fn test_wait() {
         let child = SharedChild::spawn(&mut true_cmd()).unwrap();
+        // Test the id() function while we're at it.
         assert!(child.id() > 0);
         let status = child.wait().unwrap();
         assert_eq!(status.code().unwrap(), 0);
     }
 
     #[test]
-    fn test_try_wait() {
-        // This is a hack to check that try_wait will clean up a child that has
-        // already exited. 100 milliseconds is "probably enough time". We could
-        // try to do something fancy like blocking on pipes to see when the
-        // child exits, but that might actually be less reliable, depending on
-        // the order in which the OS chooses to do things.
-        let child = SharedChild::spawn(&mut sleep_cmd(0.1)).unwrap();
-        // Check immediately, and make sure the child hasn't exited yet.
-        let maybe_status = child.try_wait().unwrap();
-        assert_eq!(maybe_status, None);
-        // Then sleep for a while and check again, after the child is supposed
-        // to have exited.
-        std::thread::sleep(std::time::Duration::from_millis(200));
-        let maybe_status = child.try_wait().unwrap();
-        assert!(maybe_status.is_some());
-        assert!(maybe_status.unwrap().success());
+    fn test_kill() {
+        let child = SharedChild::spawn(&mut sleep_forever_cmd()).unwrap();
+        child.kill().unwrap();
+        let status = child.wait().unwrap();
+        assert!(!status.success());
     }
 
     #[test]
-    fn test_kill() {
-        let child = SharedChild::spawn(&mut sleep_cmd(1_000_000)).unwrap();
-        // Check immediately, and make sure the child hasn't exited yet.
+    fn test_try_wait() {
+        let child = SharedChild::spawn(&mut sleep_forever_cmd()).unwrap();
         let maybe_status = child.try_wait().unwrap();
         assert_eq!(maybe_status, None);
-        // Now kill the child.
         child.kill().unwrap();
+        // The child will handle that signal asynchronously, so we check it
+        // repeatedly in a busy loop.
+        let mut maybe_status = None;
+        while let None = maybe_status {
+            maybe_status = child.try_wait().unwrap();
+        }
+        assert!(maybe_status.is_some());
+        assert!(!maybe_status.unwrap().success());
     }
 
     #[test]
     fn test_many_waiters() {
-        let child = Arc::new(SharedChild::spawn(&mut sleep_cmd(1_000_000)).unwrap());
+        let child = Arc::new(SharedChild::spawn(&mut sleep_forever_cmd()).unwrap());
         let mut threads = Vec::new();
         for _ in 0..10 {
             let clone = child.clone();
