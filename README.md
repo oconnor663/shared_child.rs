@@ -23,3 +23,46 @@ wraps `std::process::Child` for concurrent use, backed by these APIs.
 - [Docs](https://docs.rs/shared_child)
 - [Crate](https://crates.io/crates/shared_child)
 - [Repo](https://github.com/oconnor663/shared_child.rs)
+
+Compatibility note: The `libc` crate doesn't currently support `waitid` on
+NetBSD or OpenBSD, or on older versions of OSX. There [might also
+be](https://bugs.python.org/msg167016) some version of OSX where the
+`waitid` function exists but is broken. We can add a "best effort"
+workaround using `waitpid` for these platforms as we run into them. Please
+[file an issue](https://github.com/oconnor663/shared_child.rs/issues/new) if
+you hit this.
+
+## Example
+
+```rust
+# fn run() -> std::io::Result<()> {
+use shared_child::SharedChild;
+use std::process::Command;
+use std::sync::Arc;
+
+// Spawn a child that will just sleep for a long time,
+// and put it in an Arc to share between threads.
+let mut command = Command::new("python");
+command.arg("-c").arg("import time; time.sleep(1000000000)");
+let shared_child = SharedChild::spawn(&mut command)?;
+let child_arc = Arc::new(shared_child);
+
+// On another thread, wait on the child process.
+let child_arc_clone = child_arc.clone();
+let thread = std::thread::spawn(move || {
+    child_arc_clone.wait()
+});
+
+// While the other thread is waiting, kill the child process.
+// This wouldn't be possible with e.g. Arc<Mutex<Child>> from
+// the standard library, because the waiting thread would be
+// holding the mutex.
+child_arc.kill()?;
+
+// Join the waiting thread and get the exit status.
+let exit_status = thread.join().unwrap()?;
+assert!(!exit_status.success());
+# Ok(())
+# }
+# fn main() { run().unwrap(); }
+```
