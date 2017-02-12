@@ -35,7 +35,6 @@ you hit this.
 ## Example
 
 ```rust
-# fn run() -> std::io::Result<()> {
 use shared_child::SharedChild;
 use std::process::Command;
 use std::sync::Arc;
@@ -44,25 +43,22 @@ use std::sync::Arc;
 // and put it in an Arc to share between threads.
 let mut command = Command::new("python");
 command.arg("-c").arg("import time; time.sleep(1000000000)");
-let shared_child = SharedChild::spawn(&mut command)?;
+let shared_child = SharedChild::spawn(&mut command).unwrap();
 let child_arc = Arc::new(shared_child);
 
 // On another thread, wait on the child process.
 let child_arc_clone = child_arc.clone();
 let thread = std::thread::spawn(move || {
-    child_arc_clone.wait()
+    child_arc_clone.wait().unwrap()
 });
 
 // While the other thread is waiting, kill the child process.
 // This wouldn't be possible with e.g. Arc<Mutex<Child>> from
 // the standard library, because the waiting thread would be
 // holding the mutex.
-child_arc.kill()?;
+child_arc.kill().unwrap();
 
 // Join the waiting thread and get the exit status.
-let exit_status = thread.join().unwrap()?;
+let exit_status = thread.join().unwrap();
 assert!(!exit_status.success());
-# Ok(())
-# }
-# fn main() { run().unwrap(); }
 ```
