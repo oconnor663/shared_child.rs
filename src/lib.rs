@@ -45,15 +45,15 @@
 //! let shared_child = SharedChild::spawn(&mut command)?;
 //! let child_arc = Arc::new(shared_child);
 //!
-//! // On one thread, wait on the child process.
+//! // On another thread, wait on the child process.
 //! let child_arc_clone = child_arc.clone();
 //! let thread = std::thread::spawn(move || {
 //!     child_arc_clone.wait()
 //! });
 //!
 //! // While the other thread is waiting, kill the child process.
-//! // This wouldn't be possible with e.g. an Arc<Mutex<Child>>
-//! // from the standard library, because waiting thread would be
+//! // This wouldn't be possible with e.g. Arc<Mutex<Child>> from
+//! // the standard library, because the waiting thread would be
 //! // holding the mutex.
 //! child_arc.kill()?;
 //!
