@@ -2,6 +2,10 @@
 
 A library for awaiting and killing child processes from multiple threads.
 
+- [Docs](https://docs.rs/shared_child)
+- [Crate](https://crates.io/crates/shared_child)
+- [Repo](https://github.com/oconnor663/shared_child.rs)
+
 The
 [`std::process::Child`](https://doc.rust-lang.org/std/process/struct.Child.html)
 type in the standard library provides
@@ -19,10 +23,6 @@ without freeing its PID for reuse. That makes it safe to send signals
 concurrently. Windows has actually always supported this, by preventing PID
 reuse while there are still open handles to a child process. This library
 wraps `std::process::Child` for concurrent use, backed by these APIs.
-
-- [Docs](https://docs.rs/shared_child)
-- [Crate](https://crates.io/crates/shared_child)
-- [Repo](https://github.com/oconnor663/shared_child.rs)
 
 Compatibility note: The `libc` crate doesn't currently support `waitid` on
 NetBSD or OpenBSD, or on older versions of OSX. There [might also
