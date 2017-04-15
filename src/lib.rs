@@ -202,6 +202,16 @@ impl SharedChild {
         // wait.
         self.child.lock().unwrap().kill()
     }
+
+    /// Consume the `SharedChild` and return the `std::process::Child` it
+    /// contains.
+    ///
+    /// We never reap the child process except through `Child::wait`, so the
+    /// child object's inner state is correct, even if it was waited on while it
+    /// was shared.
+    pub fn into_inner(self) -> Child {
+        self.child.into_inner().unwrap()
+    }
 }
 
 enum ChildState {
@@ -235,9 +245,13 @@ mod tests {
     fn test_wait() {
         let child = SharedChild::spawn(&mut true_cmd()).unwrap();
         // Test the id() function while we're at it.
-        assert!(child.id() > 0);
+        let id = child.id();
+        assert!(id > 0);
         let status = child.wait().unwrap();
         assert_eq!(status.code().unwrap(), 0);
+        // Test into_inner() while we're at it.
+        let inner_child = child.into_inner();
+        assert_eq!(id, inner_child.id());
     }
 
     #[test]
