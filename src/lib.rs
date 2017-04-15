@@ -318,10 +318,13 @@ mod tests {
         shared_child.kill().unwrap();
         shared_child.wait().unwrap();
         let mut child = shared_child.into_inner();
-        // The child has already been waited on, so kill should be an
-        // InvalidInput error.
+        // The child has already been waited on, so kill should be an error.
         let kill_err = child.kill().unwrap_err();
-        assert_eq!(std::io::ErrorKind::InvalidInput, kill_err.kind());
+        if cfg!(windows) {
+            assert_eq!(std::io::ErrorKind::PermissionDenied, kill_err.kind());
+        } else {
+            assert_eq!(std::io::ErrorKind::InvalidInput, kill_err.kind());
+        }
         // But wait should succeed.
         child.wait().unwrap();
     }
