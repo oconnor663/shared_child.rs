@@ -249,9 +249,6 @@ mod tests {
         assert!(id > 0);
         let status = child.wait().unwrap();
         assert_eq!(status.code().unwrap(), 0);
-        // Test into_inner() while we're at it.
-        let inner_child = child.into_inner();
-        assert_eq!(id, inner_child.id());
     }
 
     #[test]
@@ -302,5 +299,30 @@ mod tests {
         // At this point the child has definitely exited. Wait again to test
         // that a second wait doesn't block.
         sys::wait_without_reaping(sys::get_handle(&child)).unwrap();
+    }
+
+    #[test]
+    fn test_into_inner_before_wait() {
+        let shared_child = SharedChild::spawn(&mut sleep_forever_cmd()).unwrap();
+        let mut child = shared_child.into_inner();
+        child.kill().unwrap();
+        child.wait().unwrap();
+    }
+
+    #[test]
+    fn test_into_inner_after_wait() {
+        // This makes sure the child's inner state is valid. If we used waitpid
+        // on the side, the inner child would try to wait again and cause an
+        // error.
+        let shared_child = SharedChild::spawn(&mut sleep_forever_cmd()).unwrap();
+        shared_child.kill().unwrap();
+        shared_child.wait().unwrap();
+        let mut child = shared_child.into_inner();
+        // The child has already been waited on, so kill should be an
+        // InvalidInput error.
+        let kill_err = child.kill().unwrap_err();
+        assert_eq!(std::io::ErrorKind::InvalidInput, kill_err.kind());
+        // But wait should succeed.
+        child.wait().unwrap();
     }
 }
