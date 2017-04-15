@@ -15,7 +15,7 @@ pub fn get_handle(child: &Child) -> Handle {
 pub fn wait_without_reaping(handle: Handle) -> io::Result<()> {
     loop {
         let ret = unsafe {
-            let mut siginfo = std::mem::uninitialized();
+            let mut siginfo = std::mem::zeroed();
             libc::waitid(libc::P_PID,
                          handle.0 as libc::id_t,
                          &mut siginfo,
@@ -36,7 +36,10 @@ pub fn wait_without_reaping(handle: Handle) -> io::Result<()> {
 pub fn try_wait_without_reaping(handle: Handle) -> io::Result<bool> {
     let mut siginfo: libc::siginfo_t;
     let ret = unsafe {
-        siginfo = std::mem::uninitialized();
+        // Darwin doesn't touch the siginfo_t struct if the child hasn't exited
+        // yet. It expects us to have zeroed it ahead of time. See:
+        // https://github.com/opensource-apple/xnu/blob/8cf668b09f7c419fadf6081d1f1bdd6c5033e708/bsd/kern/kern_exit.c#L2039-L2055
+        siginfo = std::mem::zeroed();
         libc::waitid(libc::P_PID,
                      handle.0 as libc::id_t,
                      &mut siginfo,
@@ -52,7 +55,8 @@ pub fn try_wait_without_reaping(handle: Handle) -> io::Result<bool> {
         // The child has not exited.
         Ok(false)
     } else {
-        // This should be impossible if we've called waitid correctly.
+        // This should be impossible if we called waitid correctly. But it will
+        // show up on macOS if we forgot to zero the siginfo_t above, for example.
         Err(io::Error::new(io::ErrorKind::Other,
                            format!("unexpected si_signo from waitid: {}", siginfo.si_signo)))
     }
