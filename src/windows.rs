@@ -3,8 +3,7 @@ extern crate kernel32;
 
 use std::io;
 use std::os::windows::io::{RawHandle, AsRawHandle};
-use std::os::windows::process::ExitStatusExt;
-use std::process::{Child, ExitStatus};
+use std::process::Child;
 
 pub struct Handle(RawHandle);
 
@@ -22,35 +21,27 @@ pub fn get_handle(child: &Child) -> Handle {
     Handle(child.as_raw_handle())
 }
 
-// This is copied almost exactly from libstd's Child::wait implementation,
-// because the basic wait on Windows doesn't reap. The main difference is that
-// this can be called without &mut Child.
-pub fn wait_without_reaping(handle: &Handle) -> io::Result<ExitStatus> {
+// This is very similar to libstd's Child::wait implementation, because the
+// basic wait on Windows doesn't reap. The main difference is that this can be
+// called without &mut Child.
+pub fn wait_without_reaping(handle: &Handle) -> io::Result<()> {
     let wait_ret = unsafe { kernel32::WaitForSingleObject(handle.0, winapi::INFINITE) };
     if wait_ret != winapi::WAIT_OBJECT_0 {
-        return Err(io::Error::last_os_error());
+        Err(io::Error::last_os_error())
+    } else {
+        Ok(())
     }
-    let mut exit_code = 0;
-    let exit_code_ret = unsafe { kernel32::GetExitCodeProcess(handle.0, &mut exit_code) };
-    if exit_code_ret == 0 {
-        return Err(io::Error::last_os_error());
-    }
-    Ok(ExitStatus::from_raw(exit_code))
 }
 
-pub fn try_wait(handle: &Handle) -> io::Result<Option<ExitStatus>> {
+pub fn try_wait_without_reaping(handle: &Handle) -> io::Result<bool> {
     let wait_ret = unsafe { kernel32::WaitForSingleObject(handle.0, 0) };
-    if wait_ret == winapi::WAIT_TIMEOUT {
+    if wait_ret == winapi::WAIT_OBJECT_0 {
+        // Child has exited.
+        Ok(true)
+    } else if wait_ret == winapi::WAIT_TIMEOUT {
         // Child has not exited yet.
-        return Ok(None);
+        Ok(false)
+    } else {
+        Err(io::Error::last_os_error())
     }
-    if wait_ret != winapi::WAIT_OBJECT_0 {
-        return Err(io::Error::last_os_error());
-    }
-    let mut exit_code = 0;
-    let exit_code_ret = unsafe { kernel32::GetExitCodeProcess(handle.0, &mut exit_code) };
-    if exit_code_ret == 0 {
-        return Err(io::Error::last_os_error());
-    }
-    Ok(Some(ExitStatus::from_raw(exit_code)))
 }

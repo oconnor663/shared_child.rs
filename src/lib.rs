@@ -90,12 +90,12 @@ impl SharedChild {
     pub fn spawn(command: &mut Command) -> io::Result<SharedChild> {
         let child = command.spawn()?;
         Ok(SharedChild {
-            id: child.id(),
-            handle: sys::get_handle(&child),
-            child: Mutex::new(child),
-            state_lock: Mutex::new(NotWaiting),
-            state_condvar: Condvar::new(),
-        })
+               id: child.id(),
+               handle: sys::get_handle(&child),
+               child: Mutex::new(child),
+               state_lock: Mutex::new(NotWaiting),
+               state_condvar: Condvar::new(),
+           })
     }
 
     /// Return the child process ID.
@@ -149,15 +149,8 @@ impl SharedChild {
         // cases. No matter what happened/happens, we'll leave the Waiting state
         // and signal the state condvar.
         let mut state = self.state_lock.lock().unwrap();
-        let final_result = noreap_result.and_then(|_| {
-            // Reap the child. Errors only short-circuit this closure.
-            if let Some(exit_status) = sys::try_wait(&self.handle)? {
-                Ok(exit_status)
-            } else {
-                // This should never happen, unless waitid lied to us.
-                Err(io::Error::new(io::ErrorKind::Other, "blocking wait after child exit"))
-            }
-        });
+        // The child has already exited, so this wait should clean up without blocking.
+        let final_result = noreap_result.and_then(|_| self.child.lock().unwrap().wait());
         *state = if let Ok(exit_status) = final_result {
             Exited(exit_status)
         } else {
@@ -186,7 +179,9 @@ impl SharedChild {
         // If it has, put ourselves in the Exited state. (There can't be any
         // other waiters to signal, because the state was NotWaiting when we
         // started, and we're still holding the status lock.)
-        if let Some(exit_status) = sys::try_wait(&self.handle)? {
+        if sys::try_wait_without_reaping(&self.handle)? {
+            // The child has exited. Reap it. This should not block.
+            let exit_status = self.child.lock().unwrap().wait()?;
             *status = Exited(exit_status);
             Ok(Some(exit_status))
         } else {
@@ -201,7 +196,9 @@ impl SharedChild {
         if let Exited(_) = *status {
             return Ok(());
         }
-        // The child is still running. Kill it.
+        // The child is still running. Kill it. This assumes that the wait
+        // functions above will never hold the child lock during a blocking
+        // wait.
         self.child.lock().unwrap().kill()
     }
 }

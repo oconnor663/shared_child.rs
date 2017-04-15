@@ -2,7 +2,7 @@ extern crate libc;
 
 use std;
 use std::io;
-use std::process::{Child, ExitStatus};
+use std::process::Child;
 
 // A handle on Unix is just the PID.
 pub struct Handle(u32);
@@ -32,19 +32,28 @@ pub fn wait_without_reaping(handle: &Handle) -> io::Result<()> {
     }
 }
 
-// This reaps the child if it's already exited, but doesn't block otherwise.
-// There's an unstable Child::try_wait() function in libstd right now, and when
-// that stabilizes we can probably delete this.
-pub fn try_wait(handle: &Handle) -> io::Result<Option<ExitStatus>> {
-    let mut status = 0;
-    let waitpid_ret = unsafe { libc::waitpid(handle.0 as libc::pid_t, &mut status, libc::WNOHANG) };
-    if waitpid_ret < 0 {
-        // EINTR is not possible with WNOHANG, so no need to retry.
+// This checks whether the child has already exited, without reaping the child.
+pub fn try_wait_without_reaping(handle: &Handle) -> io::Result<bool> {
+    let mut siginfo: libc::siginfo_t;
+    let ret = unsafe {
+        siginfo = std::mem::uninitialized();
+        libc::waitid(libc::P_PID,
+                     handle.0 as libc::id_t,
+                     &mut siginfo,
+                     libc::WEXITED | libc::WNOWAIT | libc::WNOHANG)
+    };
+    if ret != 0 {
+        // EINTR should be impossible here
         Err(io::Error::last_os_error())
-    } else if waitpid_ret == 0 {
-        Ok(None)
+    } else if siginfo.si_signo == libc::SIGCHLD {
+        // The child has exited.
+        Ok(true)
+    } else if siginfo.si_signo == 0 {
+        // The child has not exited.
+        Ok(false)
     } else {
-        use std::os::unix::process::ExitStatusExt;
-        Ok(Some(ExitStatus::from_raw(status)))
+        // This should be impossible if we've called waitid correctly.
+        Err(io::Error::new(io::ErrorKind::Other,
+                           format!("unexpected si_signo from waitid: {}", siginfo.si_signo)))
     }
 }
