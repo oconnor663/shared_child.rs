@@ -73,11 +73,10 @@ mod sys;
 mod sys;
 
 pub struct SharedChild {
-    // This lock provides shared access to kill() and wait(), though sometimes
-    // we use libc::waitpid() to reap the child instead.
+    // This lock provides shared access to kill() and wait(). We never hold it
+    // during a blocking wait, though, so that non-blocking waits and kills can
+    // go through. (Blocking waits use libc::waitid with the WNOWAIT flag.)
     child: Mutex<Child>,
-    id: u32,
-    handle: sys::Handle,
 
     // When there are multiple waiting threads, one of them will actually wait
     // on the child, and the rest will block on this condvar.
@@ -90,8 +89,6 @@ impl SharedChild {
     pub fn spawn(command: &mut Command) -> io::Result<SharedChild> {
         let child = command.spawn()?;
         Ok(SharedChild {
-               id: child.id(),
-               handle: sys::get_handle(&child),
                child: Mutex::new(child),
                state_lock: Mutex::new(NotWaiting),
                state_condvar: Condvar::new(),
@@ -100,7 +97,11 @@ impl SharedChild {
 
     /// Return the child process ID.
     pub fn id(&self) -> u32 {
-        self.id
+        self.child.lock().unwrap().id()
+    }
+
+    fn get_handle(&self) -> sys::Handle {
+        sys::get_handle(&self.child.lock().unwrap())
     }
 
     /// Wait for the child to exit, blocking the current thread, and return its
@@ -142,7 +143,7 @@ impl SharedChild {
         // because POSIX doesn't guarantee much about what happens when multiple
         // threads wait on a child at the same time:
         // http://pubs.opengroup.org/onlinepubs/9699919799/functions/V2_chap02.html#tag_15_13
-        let noreap_result = sys::wait_without_reaping(&self.handle);
+        let noreap_result = sys::wait_without_reaping(self.get_handle());
 
         // Now either we hit an error, or the child has exited and needs to be
         // reaped. Retake the state lock and handle all the different exit
@@ -179,7 +180,7 @@ impl SharedChild {
         // If it has, put ourselves in the Exited state. (There can't be any
         // other waiters to signal, because the state was NotWaiting when we
         // started, and we're still holding the status lock.)
-        if sys::try_wait_without_reaping(&self.handle)? {
+        if sys::try_wait_without_reaping(self.get_handle())? {
             // The child has exited. Reap it. This should not block.
             let exit_status = self.child.lock().unwrap().wait()?;
             *status = Exited(exit_status);
@@ -283,10 +284,9 @@ mod tests {
         // broken waitid implementation on OSX, which might hang forever if it
         // tries to wait on a child that's already exited.
         let child = true_cmd().spawn().unwrap();
-        let handle = sys::get_handle(&child);
-        sys::wait_without_reaping(&handle).unwrap();
+        sys::wait_without_reaping(sys::get_handle(&child)).unwrap();
         // At this point the child has definitely exited. Wait again to test
         // that a second wait doesn't block.
-        sys::wait_without_reaping(&handle).unwrap();
+        sys::wait_without_reaping(sys::get_handle(&child)).unwrap();
     }
 }

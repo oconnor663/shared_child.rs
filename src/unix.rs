@@ -12,7 +12,7 @@ pub fn get_handle(child: &Child) -> Handle {
 }
 
 // This blocks until a child exits, without reaping the child.
-pub fn wait_without_reaping(handle: &Handle) -> io::Result<()> {
+pub fn wait_without_reaping(handle: Handle) -> io::Result<()> {
     loop {
         let ret = unsafe {
             let mut siginfo = std::mem::uninitialized();
@@ -33,7 +33,7 @@ pub fn wait_without_reaping(handle: &Handle) -> io::Result<()> {
 }
 
 // This checks whether the child has already exited, without reaping the child.
-pub fn try_wait_without_reaping(handle: &Handle) -> io::Result<bool> {
+pub fn try_wait_without_reaping(handle: Handle) -> io::Result<bool> {
     let mut siginfo: libc::siginfo_t;
     let ret = unsafe {
         siginfo = std::mem::uninitialized();
