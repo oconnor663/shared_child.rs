@@ -62,7 +62,7 @@
 //! ```
 
 use std::io;
-use std::process::{Command, Child, ExitStatus};
+use std::process::{Command, Child, ExitStatus, ChildStdin, ChildStdout, ChildStderr};
 use std::sync::{Condvar, Mutex};
 
 #[cfg(not(windows))]
@@ -211,6 +211,24 @@ impl SharedChild {
     /// was shared.
     pub fn into_inner(self) -> Child {
         self.child.into_inner().unwrap()
+    }
+
+    /// Retrieve the stdin stream from the child if one exist. Will only return something on the
+    /// first call.
+    pub fn stdin(&self) -> Option<ChildStdin> {
+        self.child.lock().unwrap().stdin.take()
+    }
+
+    /// Retrieve the stdout stream from the child if one exist. Will only return something on the
+    /// first call.
+    pub fn stdout(&self) -> Option<ChildStdout> {
+        self.child.lock().unwrap().stdout.take()
+    }
+
+    /// Retrieve the stderr stream from the child if one exist. Will only return something on the
+    /// first call.
+    pub fn stderr(&self) -> Option<ChildStderr> {
+        self.child.lock().unwrap().stderr.take()
     }
 }
 
