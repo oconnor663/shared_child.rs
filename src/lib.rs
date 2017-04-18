@@ -243,7 +243,7 @@ use ChildState::*;
 #[cfg(test)]
 mod tests {
     use std;
-    use std::process::Command;
+    use std::process::{Command, Stdio};
     use std::sync::Arc;
     use super::{SharedChild, sys};
 
@@ -345,5 +345,27 @@ mod tests {
         }
         // But wait should succeed.
         child.wait().unwrap();
+    }
+
+    #[test]
+    fn test_retreive_stdout() {
+        use std::io::Read;
+
+        let mut command = Command::new("echo");
+        command.arg("hello")
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        
+        let shared_child = SharedChild::spawn(&mut command).unwrap();
+
+        let mut stdout = shared_child.stdout().expect("Expected stdout");
+        let mut stderr = shared_child.stderr().expect("Expected stderr");
+        let mut stdout_string = String::new();
+        let mut stderr_string = String::new();
+        stdout.read_to_string(&mut stdout_string).expect("Expected to read from stdout");
+        stderr.read_to_string(&mut stderr_string).expect("Expected to read from stderr");
+
+        assert_eq!("hello\n", stdout_string);
+        assert_eq!("", stderr_string);
     }
 }
