@@ -65,11 +65,6 @@ use std::io;
 use std::process::{Command, Child, ExitStatus};
 use std::sync::{Condvar, Mutex};
 
-#[cfg(not(windows))]
-#[path="unix.rs"]
-mod sys;
-#[cfg(windows)]
-#[path="windows.rs"]
 mod sys;
 
 pub struct SharedChild {
