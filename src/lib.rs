@@ -65,12 +65,10 @@ use std::io;
 use std::process::{Command, Child, ExitStatus};
 use std::sync::{Condvar, Mutex};
 
-#[cfg(not(windows))]
-#[path="unix.rs"]
 mod sys;
-#[cfg(windows)]
-#[path="windows.rs"]
-mod sys;
+
+#[cfg(unix)]
+pub mod unix;
 
 pub struct SharedChild {
     // This lock provides shared access to kill() and wait(). We never hold it
@@ -229,13 +227,13 @@ mod tests {
     use std::sync::Arc;
     use super::{SharedChild, sys};
 
-    fn true_cmd() -> Command {
+    pub fn true_cmd() -> Command {
         let mut cmd = Command::new("python");
         cmd.arg("-c").arg("");
         cmd
     }
 
-    fn sleep_forever_cmd() -> Command {
+    pub fn sleep_forever_cmd() -> Command {
         let mut cmd = Command::new("python");
         cmd.arg("-c").arg("import time; time.sleep(1000000000)");
         cmd
