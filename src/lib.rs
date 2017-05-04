@@ -67,6 +67,7 @@ use std::sync::{Condvar, Mutex};
 
 mod sys;
 
+// Publish the Unix-only SharedChildExt trait.
 #[cfg(unix)]
 pub mod unix;
 

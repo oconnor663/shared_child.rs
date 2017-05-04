@@ -1,9 +1,11 @@
+//! Unix-only extensions, for sending signals.
+
 extern crate libc;
 
 use std::io;
 
 pub trait SharedChildExt {
-    /// Sends a signal to the child process with `libc::kill`.
+    /// Send a signal to the child process with `libc::kill`.
     fn send_signal(&self, signal: libc::c_int) -> io::Result<()>;
 }
 
