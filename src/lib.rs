@@ -62,7 +62,7 @@
 //! ```
 
 use std::io;
-use std::process::{Command, Child, ExitStatus};
+use std::process::{Command, Child, ExitStatus, ChildStdin, ChildStdout, ChildStderr};
 use std::sync::{Condvar, Mutex};
 
 mod sys;
@@ -211,6 +211,24 @@ impl SharedChild {
     pub fn into_inner(self) -> Child {
         self.child.into_inner().unwrap()
     }
+
+    /// Retrieve the stdin stream from the child if one exist. Will only return something on the
+    /// first call.
+    pub fn stdin(&self) -> Option<ChildStdin> {
+        self.child.lock().unwrap().stdin.take()
+    }
+
+    /// Retrieve the stdout stream from the child if one exist. Will only return something on the
+    /// first call.
+    pub fn stdout(&self) -> Option<ChildStdout> {
+        self.child.lock().unwrap().stdout.take()
+    }
+
+    /// Retrieve the stderr stream from the child if one exist. Will only return something on the
+    /// first call.
+    pub fn stderr(&self) -> Option<ChildStderr> {
+        self.child.lock().unwrap().stderr.take()
+    }
 }
 
 enum ChildState {
@@ -224,7 +242,7 @@ use ChildState::*;
 #[cfg(test)]
 mod tests {
     use std;
-    use std::process::Command;
+    use std::process::{Command, Stdio};
     use std::sync::Arc;
     use super::{SharedChild, sys};
 
@@ -326,5 +344,27 @@ mod tests {
         }
         // But wait should succeed.
         child.wait().unwrap();
+    }
+
+    #[test]
+    fn test_retreive_stdout() {
+        use std::io::Read;
+
+        let mut command = Command::new("echo");
+        command.arg("hello")
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        
+        let shared_child = SharedChild::spawn(&mut command).unwrap();
+
+        let mut stdout = shared_child.stdout().expect("Expected stdout");
+        let mut stderr = shared_child.stderr().expect("Expected stderr");
+        let mut stdout_string = String::new();
+        let mut stderr_string = String::new();
+        stdout.read_to_string(&mut stdout_string).expect("Expected to read from stdout");
+        stderr.read_to_string(&mut stderr_string).expect("Expected to read from stderr");
+
+        assert_eq!("hello\n", stdout_string);
+        assert_eq!("", stderr_string);
     }
 }
