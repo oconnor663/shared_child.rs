@@ -189,8 +189,9 @@ impl SharedChild {
         }
     }
 
-    /// Send a kill signal to the child. You should call `wait` afterwards to
-    /// avoid leaving a zombie on Unix.
+    /// Send a kill signal to the child. On Unix this sends SIGKILL, and you
+    /// should call `wait` afterwards to avoid leaving a zombie. If the process
+    /// has already been waited on, this returns `Ok(())` and does nothing.
     pub fn kill(&self) -> io::Result<()> {
         let status = self.state_lock.lock().unwrap();
         if let Exited(_) = *status {

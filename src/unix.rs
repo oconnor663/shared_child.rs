@@ -5,7 +5,8 @@ extern crate libc;
 use std::io;
 
 pub trait SharedChildExt {
-    /// Send a signal to the child process with `libc::kill`.
+    /// Send a signal to the child process with `libc::kill`. If the process
+    /// has already been waited on, this returns `Ok(())` and does nothing.
     fn send_signal(&self, signal: libc::c_int) -> io::Result<()>;
 }
 
