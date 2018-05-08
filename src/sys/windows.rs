@@ -1,8 +1,8 @@
-extern crate winapi;
 extern crate kernel32;
+extern crate winapi;
 
 use std::io;
-use std::os::windows::io::{RawHandle, AsRawHandle};
+use std::os::windows::io::{AsRawHandle, RawHandle};
 use std::process::Child;
 
 pub struct Handle(RawHandle);

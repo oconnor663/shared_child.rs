@@ -62,7 +62,7 @@
 //! ```
 
 use std::io;
-use std::process::{Command, Child, ExitStatus};
+use std::process::{Child, Command, ExitStatus};
 use std::sync::{Condvar, Mutex};
 
 mod sys;
@@ -88,10 +88,10 @@ impl SharedChild {
     pub fn spawn(command: &mut Command) -> io::Result<SharedChild> {
         let child = command.spawn()?;
         Ok(SharedChild {
-               child: Mutex::new(child),
-               state_lock: Mutex::new(NotWaiting),
-               state_condvar: Condvar::new(),
-           })
+            child: Mutex::new(child),
+            state_lock: Mutex::new(NotWaiting),
+            state_condvar: Condvar::new(),
+        })
     }
 
     /// Return the child process ID.
@@ -227,7 +227,7 @@ mod tests {
     use std;
     use std::process::Command;
     use std::sync::Arc;
-    use super::{SharedChild, sys};
+    use super::{sys, SharedChild};
 
     pub fn true_cmd() -> Command {
         let mut cmd = Command::new("python");

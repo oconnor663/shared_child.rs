@@ -16,10 +16,12 @@ pub fn wait_without_reaping(handle: Handle) -> io::Result<()> {
     loop {
         let ret = unsafe {
             let mut siginfo = std::mem::zeroed();
-            libc::waitid(libc::P_PID,
-                         handle.0 as libc::id_t,
-                         &mut siginfo,
-                         libc::WEXITED | libc::WNOWAIT)
+            libc::waitid(
+                libc::P_PID,
+                handle.0 as libc::id_t,
+                &mut siginfo,
+                libc::WEXITED | libc::WNOWAIT,
+            )
         };
         if ret == 0 {
             return Ok(());
@@ -40,10 +42,12 @@ pub fn try_wait_without_reaping(handle: Handle) -> io::Result<bool> {
         // yet. It expects us to have zeroed it ahead of time. See:
         // https://github.com/opensource-apple/xnu/blob/8cf668b09f7c419fadf6081d1f1bdd6c5033e708/bsd/kern/kern_exit.c#L2039-L2055
         siginfo = std::mem::zeroed();
-        libc::waitid(libc::P_PID,
-                     handle.0 as libc::id_t,
-                     &mut siginfo,
-                     libc::WEXITED | libc::WNOWAIT | libc::WNOHANG)
+        libc::waitid(
+            libc::P_PID,
+            handle.0 as libc::id_t,
+            &mut siginfo,
+            libc::WEXITED | libc::WNOWAIT | libc::WNOHANG,
+        )
     };
     if ret != 0 {
         // EINTR should be impossible here
@@ -57,7 +61,9 @@ pub fn try_wait_without_reaping(handle: Handle) -> io::Result<bool> {
     } else {
         // This should be impossible if we called waitid correctly. But it will
         // show up on macOS if we forgot to zero the siginfo_t above, for example.
-        Err(io::Error::new(io::ErrorKind::Other,
-                           format!("unexpected si_signo from waitid: {}", siginfo.si_signo)))
+        Err(io::Error::new(
+            io::ErrorKind::Other,
+            format!("unexpected si_signo from waitid: {}", siginfo.si_signo),
+        ))
     }
 }
