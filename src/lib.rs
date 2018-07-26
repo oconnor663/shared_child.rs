@@ -224,10 +224,10 @@ use ChildState::*;
 
 #[cfg(test)]
 mod tests {
+    use super::{sys, SharedChild};
     use std;
     use std::process::Command;
     use std::sync::Arc;
-    use super::{sys, SharedChild};
 
     pub fn true_cmd() -> Command {
         let mut cmd = Command::new("python");

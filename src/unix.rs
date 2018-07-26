@@ -30,11 +30,11 @@ impl SharedChildExt for super::SharedChild {
 
 #[cfg(test)]
 mod tests {
-    use tests::*;
-    use SharedChild;
     use super::libc;
     use super::SharedChildExt;
     use std::os::unix::process::ExitStatusExt;
+    use tests::*;
+    use SharedChild;
 
     #[test]
     fn test_send_signal() {
