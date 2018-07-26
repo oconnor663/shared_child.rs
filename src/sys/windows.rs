@@ -1,6 +1,9 @@
-extern crate kernel32;
 extern crate winapi;
 
+use self::winapi::shared::winerror::WAIT_TIMEOUT;
+use self::winapi::um::synchapi::WaitForSingleObject;
+use self::winapi::um::winbase::{WAIT_OBJECT_0, INFINITE};
+use self::winapi::um::winnt::HANDLE;
 use std::io;
 use std::os::windows::io::{AsRawHandle, RawHandle};
 use std::process::Child;
@@ -19,8 +22,8 @@ pub fn get_handle(child: &Child) -> Handle {
 // basic wait on Windows doesn't reap. The main difference is that this can be
 // called without &mut Child.
 pub fn wait_without_reaping(handle: Handle) -> io::Result<()> {
-    let wait_ret = unsafe { kernel32::WaitForSingleObject(handle.0, winapi::INFINITE) };
-    if wait_ret != winapi::WAIT_OBJECT_0 {
+    let wait_ret = unsafe { WaitForSingleObject(handle.0 as HANDLE, INFINITE) };
+    if wait_ret != WAIT_OBJECT_0 {
         Err(io::Error::last_os_error())
     } else {
         Ok(())
@@ -28,11 +31,11 @@ pub fn wait_without_reaping(handle: Handle) -> io::Result<()> {
 }
 
 pub fn try_wait_without_reaping(handle: Handle) -> io::Result<bool> {
-    let wait_ret = unsafe { kernel32::WaitForSingleObject(handle.0, 0) };
-    if wait_ret == winapi::WAIT_OBJECT_0 {
+    let wait_ret = unsafe { WaitForSingleObject(handle.0 as HANDLE, 0) };
+    if wait_ret == WAIT_OBJECT_0 {
         // Child has exited.
         Ok(true)
-    } else if wait_ret == winapi::WAIT_TIMEOUT {
+    } else if wait_ret == WAIT_TIMEOUT {
         // Child has not exited yet.
         Ok(false)
     } else {
