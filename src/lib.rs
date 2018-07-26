@@ -237,7 +237,7 @@ mod tests {
 
     pub fn sleep_forever_cmd() -> Command {
         let mut cmd = Command::new("python");
-        cmd.arg("-c").arg("import time; time.sleep(1000000000)");
+        cmd.arg("-c").arg("import time; time.sleep(1000000)");
         cmd
     }
 
