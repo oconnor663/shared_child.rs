@@ -71,6 +71,7 @@ mod sys;
 #[cfg(unix)]
 pub mod unix;
 
+#[derive(Debug)]
 pub struct SharedChild {
     // This lock provides shared access to kill() and wait(). We never hold it
     // during a blocking wait, though, so that non-blocking waits and kills can
@@ -214,6 +215,7 @@ impl SharedChild {
     }
 }
 
+#[derive(Debug)]
 enum ChildState {
     NotWaiting,
     Waiting,
