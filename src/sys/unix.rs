@@ -39,8 +39,20 @@ pub fn try_wait_without_reaping(handle: Handle) -> io::Result<bool> {
     let mut siginfo: libc::siginfo_t;
     let ret = unsafe {
         // Darwin doesn't touch the siginfo_t struct if the child hasn't exited
-        // yet. It expects us to have zeroed it ahead of time. See:
-        // https://github.com/opensource-apple/xnu/blob/8cf668b09f7c419fadf6081d1f1bdd6c5033e708/bsd/kern/kern_exit.c#L2039-L2055
+        // yet. It expects us to have zeroed it ahead of time:
+        //
+        //   The state of the siginfo structure in this case
+        //   is undefined.  Some implementations bzero it, some
+        //   (like here) leave it untouched for efficiency.
+        //
+        //   Thus the most portable check for "no matching pid with
+        //   WNOHANG" is to store a zero into si_pid before
+        //   invocation, then check for a non-zero value afterwards.
+        //
+        // https://github.com/opensource-apple/xnu/blob/0a798f6738bc1db01281fc08ae024145e84df927/bsd/kern/kern_exit.c#L2150-L2156
+        //
+        // XXX: The siginfo_t struct has padding. Does that make it unsound to
+        // initialize it this way?
         siginfo = std::mem::zeroed();
         libc::waitid(
             libc::P_PID,
