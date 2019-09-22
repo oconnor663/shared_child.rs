@@ -5,6 +5,7 @@ authors = ["jacko"]
 license = "MIT"
 repository = "https://github.com/oconnor663/shared_child.rs"
 documentation = "https://docs.rs/shared_child"
+readme = "README.md"
 description = "a library for using child processes from multiple threads"
 keywords = ["command", "process", "child", "subprocess"]
 categories = ["os"]
