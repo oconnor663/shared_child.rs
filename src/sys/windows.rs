@@ -1,5 +1,3 @@
-extern crate winapi;
-
 use self::winapi::shared::winerror::WAIT_TIMEOUT;
 use self::winapi::um::synchapi::WaitForSingleObject;
 use self::winapi::um::winbase::{INFINITE, WAIT_OBJECT_0};

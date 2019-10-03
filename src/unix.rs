@@ -1,7 +1,5 @@
 //! Unix-only extensions, for sending signals.
 
-extern crate libc;
-
 use std::io;
 
 pub trait SharedChildExt {
@@ -30,7 +28,6 @@ impl SharedChildExt for super::SharedChild {
 
 #[cfg(test)]
 mod tests {
-    use super::libc;
     use super::SharedChildExt;
     use crate::tests::*;
     use crate::SharedChild;

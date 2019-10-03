@@ -1,5 +1,3 @@
-extern crate libc;
-
 use std;
 use std::io;
 use std::process::Child;
