@@ -33,8 +33,8 @@ mod tests {
     use super::libc;
     use super::SharedChildExt;
     use std::os::unix::process::ExitStatusExt;
-    use tests::*;
-    use SharedChild;
+    use crate::tests::*;
+    use crate::SharedChild;
 
     #[test]
     fn test_send_signal() {

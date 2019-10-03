@@ -9,6 +9,7 @@ readme = "README.md"
 description = "a library for using child processes from multiple threads"
 keywords = ["command", "process", "child", "subprocess"]
 categories = ["os"]
+edition = "2018"
 
 [target.'cfg(not(windows))'.dependencies]
 libc = "0.2.42"

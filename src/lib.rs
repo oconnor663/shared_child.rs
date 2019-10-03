@@ -222,7 +222,7 @@ enum ChildState {
     Exited(ExitStatus),
 }
 
-use ChildState::*;
+use crate::ChildState::*;
 
 #[cfg(test)]
 mod tests {
