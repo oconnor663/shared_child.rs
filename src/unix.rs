@@ -32,9 +32,9 @@ impl SharedChildExt for super::SharedChild {
 mod tests {
     use super::libc;
     use super::SharedChildExt;
-    use std::os::unix::process::ExitStatusExt;
     use crate::tests::*;
     use crate::SharedChild;
+    use std::os::unix::process::ExitStatusExt;
 
     #[test]
     fn test_send_signal() {

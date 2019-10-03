@@ -2,7 +2,7 @@ extern crate winapi;
 
 use self::winapi::shared::winerror::WAIT_TIMEOUT;
 use self::winapi::um::synchapi::WaitForSingleObject;
-use self::winapi::um::winbase::{WAIT_OBJECT_0, INFINITE};
+use self::winapi::um::winbase::{INFINITE, WAIT_OBJECT_0};
 use self::winapi::um::winnt::HANDLE;
 use std::io;
 use std::os::windows::io::{AsRawHandle, RawHandle};
