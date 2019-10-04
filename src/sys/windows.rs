@@ -1,10 +1,10 @@
-use self::winapi::shared::winerror::WAIT_TIMEOUT;
-use self::winapi::um::synchapi::WaitForSingleObject;
-use self::winapi::um::winbase::{INFINITE, WAIT_OBJECT_0};
-use self::winapi::um::winnt::HANDLE;
 use std::io;
 use std::os::windows::io::{AsRawHandle, RawHandle};
 use std::process::Child;
+use winapi::shared::winerror::WAIT_TIMEOUT;
+use winapi::um::synchapi::WaitForSingleObject;
+use winapi::um::winbase::{INFINITE, WAIT_OBJECT_0};
+use winapi::um::winnt::HANDLE;
 
 pub struct Handle(RawHandle);
 
