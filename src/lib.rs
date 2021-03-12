@@ -231,12 +231,27 @@ mod tests {
     use std::process::Command;
     use std::sync::Arc;
 
+    // Python isn't available on some Unix platforms, e.g. Android, so we need this instead.
+    #[cfg(unix)]
+    pub fn true_cmd() -> Command {
+        Command::new("true")
+    }
+
+    #[cfg(not(unix))]
     pub fn true_cmd() -> Command {
         let mut cmd = Command::new("python");
         cmd.arg("-c").arg("");
         cmd
     }
 
+    #[cfg(unix)]
+    pub fn sleep_forever_cmd() -> Command {
+        let mut cmd = Command::new("sleep");
+        cmd.arg("1000000");
+        cmd
+    }
+
+    #[cfg(not(unix))]
     pub fn sleep_forever_cmd() -> Command {
         let mut cmd = Command::new("python");
         cmd.arg("-c").arg("import time; time.sleep(1000000)");
