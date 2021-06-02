@@ -85,14 +85,19 @@ pub struct SharedChild {
 }
 
 impl SharedChild {
-    /// Spawn a new `SharedChild` from a `std::process::Command`.
-    pub fn spawn(command: &mut Command) -> io::Result<SharedChild> {
-        let child = command.spawn()?;
-        Ok(SharedChild {
+    /// Create `SharedChild` from a `std::process::Child`
+    pub fn new(child: Child) -> Self {
+        Self {
             child: Mutex::new(child),
             state_lock: Mutex::new(NotWaiting),
             state_condvar: Condvar::new(),
-        })
+        }
+    }
+
+    /// Spawn a new `SharedChild` from a `std::process::Command`.
+    pub fn spawn(command: &mut Command) -> io::Result<SharedChild> {
+        let child = command.spawn()?;
+        Ok(Self::new(child))
     }
 
     /// Return the child process ID.
