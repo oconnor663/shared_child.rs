@@ -48,9 +48,6 @@ pub fn try_wait_without_reaping(handle: Handle) -> io::Result<bool> {
         //   invocation, then check for a non-zero value afterwards.
         //
         // https://github.com/opensource-apple/xnu/blob/0a798f6738bc1db01281fc08ae024145e84df927/bsd/kern/kern_exit.c#L2150-L2156
-        //
-        // XXX: The siginfo_t struct has padding. Does that make it unsound to
-        // initialize it this way?
         siginfo = std::mem::zeroed();
         libc::waitid(
             libc::P_PID,
