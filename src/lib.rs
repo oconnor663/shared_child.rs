@@ -62,7 +62,7 @@
 //! ```
 
 use std::io;
-use std::process::{Child, Command, ExitStatus};
+use std::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command, ExitStatus};
 use std::sync::{Condvar, Mutex};
 
 mod sys;
@@ -228,11 +228,41 @@ impl SharedChild {
     /// [`std::process::Child`](https://doc.rust-lang.org/std/process/struct.Child.html)
     /// it contains.
     ///
-    /// We never reap the child process except through `Child::wait`, so the
-    /// child object's inner state is correct, even if it was waited on while it
-    /// was shared.
+    /// We never reap the child process except by calling `wait` or `try_wait`
+    /// on it, so the child object's inner state is correct, even if it was
+    /// waited on while it was shared.
     pub fn into_inner(self) -> Child {
         self.child.into_inner().unwrap()
+    }
+
+    /// Take the child's
+    /// [`stdin`](https://doc.rust-lang.org/std/process/struct.Child.html#structfield.stdin)
+    /// handle, if any.
+    ///
+    /// This will only return `Some` the first time it's called, and then only if the `Command`
+    /// that created the child was configured with `.stdin(Stdio::piped())`.
+    pub fn take_stdin(&self) -> Option<ChildStdin> {
+        self.child.lock().unwrap().stdin.take()
+    }
+
+    /// Take the child's
+    /// [`stdout`](https://doc.rust-lang.org/std/process/struct.Child.html#structfield.stdout)
+    /// handle, if any.
+    ///
+    /// This will only return `Some` the first time it's called, and then only if the `Command`
+    /// that created the child was configured with `.stdout(Stdio::piped())`.
+    pub fn take_stdout(&self) -> Option<ChildStdout> {
+        self.child.lock().unwrap().stdout.take()
+    }
+
+    /// Take the child's
+    /// [`stderr`](https://doc.rust-lang.org/std/process/struct.Child.html#structfield.stderr)
+    /// handle, if any.
+    ///
+    /// This will only return `Some` the first time it's called, and then only if the `Command`
+    /// that created the child was configured with `.stderr(Stdio::piped())`.
+    pub fn take_stderr(&self) -> Option<ChildStderr> {
+        self.child.lock().unwrap().stderr.take()
     }
 }
 
@@ -410,5 +440,25 @@ mod tests {
                 return Ok(());
             }
         }
+    }
+
+    #[test]
+    fn test_takes() -> Result<(), Box<dyn Error>> {
+        let mut command = true_cmd();
+        command.stdin(Stdio::piped());
+        command.stdout(Stdio::piped());
+        command.stderr(Stdio::piped());
+        let shared_child = SharedChild::spawn(&mut command)?;
+
+        assert!(shared_child.take_stdin().is_some());
+        assert!(shared_child.take_stdout().is_some());
+        assert!(shared_child.take_stderr().is_some());
+
+        assert!(shared_child.take_stdin().is_none());
+        assert!(shared_child.take_stdout().is_none());
+        assert!(shared_child.take_stderr().is_none());
+
+        shared_child.wait()?;
+        Ok(())
     }
 }
