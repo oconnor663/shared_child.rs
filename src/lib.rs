@@ -400,14 +400,8 @@ mod tests {
         shared_child.kill().unwrap();
         shared_child.wait().unwrap();
         let mut child = shared_child.into_inner();
-        // The child has already been waited on, so kill should be an error.
-        let kill_err = child.kill().unwrap_err();
-        if cfg!(windows) {
-            assert_eq!(std::io::ErrorKind::PermissionDenied, kill_err.kind());
-        } else {
-            assert_eq!(std::io::ErrorKind::InvalidInput, kill_err.kind());
-        }
-        // But wait should succeed.
+        // Wait should succeed. (Note that we also used to test that
+        // child.kill() failed here, but its behavior changed in Rust 1.72.)
         child.wait().unwrap();
     }
 
