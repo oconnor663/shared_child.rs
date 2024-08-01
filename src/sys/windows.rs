@@ -1,10 +1,8 @@
 use std::io;
 use std::os::windows::io::{AsRawHandle, RawHandle};
 use std::process::Child;
-use winapi::shared::winerror::WAIT_TIMEOUT;
-use winapi::um::synchapi::WaitForSingleObject;
-use winapi::um::winbase::{INFINITE, WAIT_OBJECT_0};
-use winapi::um::winnt::HANDLE;
+use windows_sys::Win32::Foundation::{HANDLE, WAIT_OBJECT_0, WAIT_TIMEOUT};
+use windows_sys::Win32::System::Threading::{WaitForSingleObject, INFINITE};
 
 pub struct Handle(RawHandle);
 
