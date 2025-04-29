@@ -10,8 +10,8 @@ on:
 env:
   RUSTFLAGS: "-D warnings"
   RUST_BACKTRACE: "1"
-  # Set a very high iteration count for test_wait_try_wait_race.
-  SHARED_CHILD_RACE_ITERATIONS: "100000"
+  # Set a very long test duration for test_wait_try_wait_race.
+  SHARED_CHILD_RACE_TEST_SECONDS: 300
 
 jobs:
   cargo_tests:

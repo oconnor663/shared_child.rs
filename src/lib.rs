@@ -476,12 +476,16 @@ mod tests {
         // a few hundred iterations, but sometimes it took thousands. Default to 1_000 iterations
         // so that the tests don't take too long, but use and env var to configure a really big run
         // in CI.
-        let mut iterations: u64 = 1_000;
-        if let Ok(iterations_str) = std::env::var("SHARED_CHILD_RACE_ITERATIONS") {
-            dbg!(&iterations_str);
-            iterations = iterations_str.parse().expect("should be an int");
+        use std::time::{Duration, Instant};
+        let mut test_duration_secs: u64 = 1;
+        if let Ok(test_duration_secs_str) = std::env::var("SHARED_CHILD_RACE_TEST_SECONDS") {
+            dbg!(&test_duration_secs_str);
+            test_duration_secs = test_duration_secs_str.parse().expect("invalid u64");
         }
-        for i in 0..iterations {
+        let test_duration = Duration::from_secs(test_duration_secs);
+        let test_start = Instant::now();
+        let mut iterations = 1u64;
+        loop {
             // Start a child that will exit immediately.
             let child = SharedChild::spawn(&mut true_cmd())?;
             // Wait for the child to exit, without updating the SharedChild state.
@@ -504,11 +508,20 @@ mod tests {
                     .join()
                     .unwrap()
             });
+            let test_time_so_far = Instant::now().saturating_duration_since(test_start);
             assert!(
                 try_wait_ret.is_some(),
-                "race condition after {i} iterations",
+                "encountered the race condition after {:?} ({} iterations)",
+                test_time_so_far,
+                iterations,
             );
+            iterations += 1;
+
+            // If we've met the target test duration (1 sec by default), exit with success.
+            // Otherwise keep looping and trying to provoke the race.
+            if test_time_so_far >= test_duration {
+                return Ok(());
+            }
         }
-        Ok(())
     }
 }
