@@ -455,4 +455,60 @@ mod tests {
         shared_child.wait()?;
         Ok(())
     }
+
+    #[test]
+    fn test_wait_try_wait_race() -> Result<(), Box<dyn Error>> {
+        // Make sure that .wait() and .try_wait() can't race against each other. The scenario we're
+        // worried about is:
+        //   1. wait() takes the child lock, set the state to Waiting, and releases the child lock.
+        //   2. try_wait swoops in, takes the child lock, sees the Waiting state, and returns
+        //      Ok(None).
+        //   3. wait() resumes, actually calls waitit(), observes the child has exited, retakes the
+        //      child lock, reaps the child, and sets the state to Exited.
+        // A race like this could cause .try_wait() to report that the child hasn't exited, even if
+        // in fact the child exited long ago. A subsequent call to .try_wait() would almost
+        // certainly report Ok(Some(_)), but the first call is still a bug. The way to prevent the
+        // bug is by either [a] making .try_wait() call waitid() even it the state is Waiting or
+        // [b] making .wait() do a non-blocking call to waitid() before releasing the child lock.
+        // (Remember that we can't hold the child lock while blocking.)
+        //
+        // This was a failing test when I first committed it. Most of the time it would fail after
+        // a few hundred iterations, but sometimes it took thousands. Default to 1_000 iterations
+        // so that the tests don't take too long, but use and env var to configure a really big run
+        // in CI.
+        let mut iterations: u64 = 1_000;
+        if let Ok(iterations_str) = std::env::var("SHARED_CHILD_RACE_ITERATIONS") {
+            dbg!(&iterations_str);
+            iterations = iterations_str.parse().expect("should be an int");
+        }
+        for i in 0..iterations {
+            // Start a child that will exit immediately.
+            let child = SharedChild::spawn(&mut true_cmd())?;
+            // Wait for the child to exit, without updating the SharedChild state.
+            sys::wait_without_reaping(child.get_handle())?;
+            // Spawn two threads, one to wait() and one to try_wait(). It should be impossible for the
+            // try_wait thread to return Ok(None) at this point. However, we want to make sure there's
+            // no race condition between them, where the wait() thread has said it's waiting and
+            // released the child lock but hasn't yet actually waited.
+            let barrier = std::sync::Barrier::new(2);
+            let try_wait_ret = std::thread::scope(|scope| {
+                scope.spawn(|| {
+                    barrier.wait();
+                    child.wait().unwrap();
+                });
+                scope
+                    .spawn(|| {
+                        barrier.wait();
+                        child.try_wait().unwrap()
+                    })
+                    .join()
+                    .unwrap()
+            });
+            assert!(
+                try_wait_ret.is_some(),
+                "race condition after {i} iterations",
+            );
+        }
+        Ok(())
+    }
 }
