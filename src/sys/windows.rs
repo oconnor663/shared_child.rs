@@ -1,7 +1,7 @@
 use std::io;
 use std::os::windows::io::{AsRawHandle, RawHandle};
 use std::process::Child;
-use windows_sys::Win32::Foundation::{HANDLE, WAIT_OBJECT_0, WAIT_TIMEOUT};
+use windows_sys::Win32::Foundation::{HANDLE, WAIT_OBJECT_0};
 use windows_sys::Win32::System::Threading::{WaitForSingleObject, INFINITE};
 
 pub struct Handle(RawHandle);
@@ -23,18 +23,5 @@ pub fn wait_without_reaping(handle: Handle) -> io::Result<()> {
         Err(io::Error::last_os_error())
     } else {
         Ok(())
-    }
-}
-
-pub fn try_wait_without_reaping(handle: Handle) -> io::Result<bool> {
-    let wait_ret = unsafe { WaitForSingleObject(handle.0 as HANDLE, 0) };
-    if wait_ret == WAIT_OBJECT_0 {
-        // Child has exited.
-        Ok(true)
-    } else if wait_ret == WAIT_TIMEOUT {
-        // Child has not exited yet.
-        Ok(false)
-    } else {
-        Err(io::Error::last_os_error())
     }
 }
