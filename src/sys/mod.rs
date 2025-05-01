@@ -1,9 +1,11 @@
 #[cfg(unix)]
-#[path = "unix.rs"]
-mod sys;
+mod unix;
+
+#[cfg(unix)]
+pub use unix::*;
 
 #[cfg(windows)]
-#[path = "windows.rs"]
-mod sys;
+mod windows;
 
-pub use self::sys::*;
+#[cfg(windows)]
+pub use windows::*;
