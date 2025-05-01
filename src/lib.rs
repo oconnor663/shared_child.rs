@@ -75,12 +75,12 @@ pub mod unix;
 enum ChildState {
     NotWaiting,
     Waiting,
-    // std::process::Child caches the exit status internally, and we could *almost* get away with
-    // omitting the Exited state here and just calling Child::try_wait whenever we wanted it. But
-    // the one place we definitely can't get away with that is send_signal, because we never want
-    // reaping the child to race against a blocking call to waitid. (SharedChild::try_wait
-    // short-circuits in the Waiting state, so it doesn't have this issue, but send_signal needs to
-    // work in that state.)
+    // std::process::Child doesn't provide a way to ask whether it's already exited other than
+    // calling Child::try_wait, which could reap the child as a side effect. The main place where
+    // we need to worry about this is send_signal, where we need to short-circuit if the child has
+    // been reaped. The Waiting state guarantees the child is un-reaped, and we *could* call
+    // Child::try_wait in the NotWaiting state, but that would be an odd side effect, and it's
+    // cleaner to just track Exited as a third state.
     Exited(ExitStatus),
 }
 
@@ -165,19 +165,21 @@ impl SharedChild {
         let mut inner_guard = self.inner.lock().unwrap();
         loop {
             match inner_guard.state {
-                NotWaiting => {
-                    // Either no one is waiting on the child yet, or a previous
-                    // waiter failed. That means we need to do it ourselves.
-                    // Break out of this loop.
-                    break;
-                }
+                // Either no one is waiting on the child yet, or a previous waiter failed. That
+                // means we need to do it ourselves. Break out of this loop.
+                NotWaiting => break,
+
+                // Another thread is already waiting on the child. We'll block until it signal us
+                // on the condvar, then loop again. Spurious wakeups could bring us here multiple
+                // times though, see the Condvar docs.
                 Waiting => {
-                    // Another thread is already waiting on the child. We'll
-                    // block until it signal us on the condvar, then loop again.
-                    // Spurious wakeups could bring us here multiple times
-                    // though, see the Condvar docs.
                     inner_guard = self.condvar.wait(inner_guard).unwrap();
                 }
+
+                // Doing another `break` here could also be ok in theory, because an exited Child
+                // caches its own exit status, and the call to try_wait_and_reap would
+                // short-circuit and return Some. However, try_wait_and_reap asserts the NotWaiting
+                // state, and I like that assert, so we need to return here.
                 Exited(exit_status) => return Ok(exit_status),
             }
         }
@@ -272,6 +274,10 @@ impl SharedChild {
             // case where the child exited long ago. See the comments in .wait() above.
             Waiting => return Ok(None),
 
+            // Falling through here could also be ok in theory, because an exited Child caches its
+            // own exit status, and the call to try_wait_and_reap would short-circuit and return
+            // Some. However, try_wait_and_reap asserts the NotWaiting state, and I like that
+            // assert, so we need to return here.
             Exited(exit_status) => return Ok(Some(exit_status)),
         };
 
