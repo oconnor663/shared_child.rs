@@ -301,8 +301,10 @@ impl SharedChild {
     /// [`std::process::Child`](https://doc.rust-lang.org/std/process/struct.Child.html)
     /// it contains.
     ///
-    /// We never reap the child process except by calling `Child::try_wait` on it, so the child
-    /// object's inner state is correct, even if it was waited on while it was shared.
+    /// We never reap the child process except by calling
+    /// [`Child::try_wait`](https://doc.rust-lang.org/std/process/struct.Child.html#method.try_wait)
+    /// on it, so the child object's inner state is correct, even if it was waited on while it was
+    /// shared.
     pub fn into_inner(self) -> Child {
         self.inner.into_inner().unwrap().child
     }
