@@ -1,6 +1,6 @@
 [package]
 name = "shared_child"
-version = "1.0.1"
+version = "1.0.2"
 authors = ["jacko"]
 license = "MIT"
 repository = "https://github.com/oconnor663/shared_child.rs"
