@@ -531,17 +531,14 @@ mod tests {
     fn test_wait_try_wait_race() -> Result<(), Box<dyn Error>> {
         // Make sure that .wait() and .try_wait() can't race against each other. The scenario we're
         // worried about is:
-        //   1. wait() takes the child lock, set the state to Waiting, and releases the child lock.
-        //   2. try_wait swoops in, takes the child lock, sees the Waiting state, and returns
-        //      Ok(None).
+        //   1. wait() takes the lock, set the state to Waiting, and releases the lock.
+        //   2. try_wait swoops in, takes the lock, sees the Waiting state, and returns Ok(None).
         //   3. wait() resumes, actually calls waitit(), observes the child has exited, retakes the
-        //      child lock, reaps the child, and sets the state to Exited.
+        //      lock, reaps the child, and sets the state to Exited.
         // A race like this could cause .try_wait() to report that the child hasn't exited, even if
         // in fact the child exited long ago. A subsequent call to .try_wait() would almost
         // certainly report Ok(Some(_)), but the first call is still a bug. The way to prevent the
-        // bug is by either [a] making .try_wait() call waitid() even it the state is Waiting or
-        // [b] making .wait() do a non-blocking call to waitid() before releasing the child lock.
-        // (Remember that we can't hold the child lock while blocking.)
+        // bug is by making .wait() do a non-blocking call to waitid() before releasing the lock.
         //
         // This was a failing test when I first committed it. Most of the time it would fail after
         // a few hundred iterations, but sometimes it took thousands. Default to one second so that
