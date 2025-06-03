@@ -293,7 +293,7 @@ impl SharedChild {
         self.wait_deadline(deadline)
     }
 
-    #[cfg(feature = "timeout")]
+    #[cfg(all(not(windows), feature = "timeout"))]
     pub fn wait_deadline(&self, deadline: std::time::Instant) -> io::Result<Option<ExitStatus>> {
         let mut waiter = sigchld::Waiter::new()?;
         loop {
@@ -305,6 +305,11 @@ impl SharedChild {
             }
             waiter.wait_deadline(deadline)?;
         }
+    }
+
+    #[cfg(all(windows, feature = "timeout"))]
+    pub fn wait_deadline(&self, deadline: std::time::Instant) -> io::Result<Option<ExitStatus>> {
+        todo!()
     }
 
     /// Send a kill signal to the child. On Unix this sends SIGKILL, and you
