@@ -377,6 +377,7 @@ mod tests {
     use std::error::Error;
     use std::process::{Command, Stdio};
     use std::sync::Arc;
+    use std::time::{Duration, Instant};
 
     // Python isn't available on some Unix platforms, e.g. Android, so we need this instead.
     #[cfg(unix)]
@@ -393,17 +394,24 @@ mod tests {
 
     // Python isn't available on some Unix platforms, e.g. Android, so we need this instead.
     #[cfg(unix)]
-    pub fn sleep_forever_cmd() -> Command {
+    pub fn sleep_cmd(duration: Duration) -> Command {
         let mut cmd = Command::new("sleep");
-        cmd.arg("1000000");
+        cmd.arg(format!("{}", duration.as_secs_f32()));
         cmd
     }
 
     #[cfg(not(unix))]
-    pub fn sleep_forever_cmd() -> Command {
+    pub fn sleep_cmd(duration: Duration) -> Command {
         let mut cmd = Command::new("python");
-        cmd.arg("-c").arg("import time; time.sleep(1000000)");
+        cmd.arg("-c").arg(format!(
+            "import time; time.sleep({})",
+            duration.as_secs_f32()
+        ));
         cmd
+    }
+
+    pub fn sleep_forever_cmd() -> Command {
+        sleep_cmd(Duration::from_secs(1000000))
     }
 
     // Python isn't available on some Unix platforms, e.g. Android, so we need this instead.
@@ -427,6 +435,40 @@ mod tests {
         assert!(id > 0);
         let status = child.wait().unwrap();
         assert_eq!(status.code().unwrap(), 0);
+    }
+
+    #[test]
+    #[cfg(feature = "timeout")]
+    fn test_wait_timeout() {
+        let short_child = SharedChild::spawn(&mut sleep_cmd(Duration::from_millis(100))).unwrap();
+        let status = short_child
+            .wait_timeout(Duration::from_secs(1))
+            .expect("no IO error")
+            .expect("did not time out");
+        assert_eq!(status.code().unwrap(), 0);
+
+        let long_child = SharedChild::spawn(&mut sleep_forever_cmd()).unwrap();
+        let status = long_child
+            .wait_timeout(Duration::from_millis(100))
+            .expect("no IO error");
+        assert!(status.is_none(), "timed out");
+    }
+
+    #[test]
+    #[cfg(feature = "timeout")]
+    fn test_wait_deadline() {
+        let short_child = SharedChild::spawn(&mut sleep_cmd(Duration::from_millis(100))).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(1);
+        let status = short_child
+            .wait_deadline(deadline)
+            .expect("no IO error")
+            .expect("did not time out");
+        assert_eq!(status.code().unwrap(), 0);
+
+        let long_child = SharedChild::spawn(&mut sleep_forever_cmd()).unwrap();
+        let deadline = Instant::now() + Duration::from_millis(100);
+        let status = long_child.wait_deadline(deadline).expect("no IO error");
+        assert!(status.is_none(), "timed out");
     }
 
     #[test]
@@ -568,7 +610,6 @@ mod tests {
         // This was a failing test when I first committed it. Most of the time it would fail after
         // a few hundred iterations, but sometimes it took thousands. Default to one second so that
         // the tests don't take too long, but use an env var to configure a really big run in CI.
-        use std::time::{Duration, Instant};
         let mut test_duration_secs: u64 = 1;
         if let Ok(test_duration_secs_str) = std::env::var("SHARED_CHILD_RACE_TEST_SECONDS") {
             dbg!(&test_duration_secs_str);
