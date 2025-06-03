@@ -309,7 +309,58 @@ impl SharedChild {
 
     #[cfg(all(windows, feature = "timeout"))]
     pub fn wait_deadline(&self, deadline: std::time::Instant) -> io::Result<Option<ExitStatus>> {
-        todo!()
+        use windows_sys::Win32::Foundation::WAIT_TIMEOUT;
+        let mut inner_guard = self.inner.lock().unwrap();
+        loop {
+            match inner_guard.state {
+                NotWaiting => break,
+                Waiting => {
+                    if std::time::Instant::now() >= deadline {
+                        return Ok(None);
+                    }
+                    let timeout = deadline.saturating_duration_since(std::time::Instant::now());
+                    let (guard, wait_res) =
+                        self.condvar.wait_timeout(inner_guard, timeout).unwrap();
+                    inner_guard = guard;
+                    if wait_res.timed_out() {
+                        return Ok(None);
+                    }
+                }
+                Exited(status) => return Ok(Some(status)),
+            }
+        }
+
+        if let Some(status) = inner_guard.try_wait_and_reap()? {
+            return Ok(Some(status));
+        }
+        if std::time::Instant::now() >= deadline {
+            return Ok(None);
+        }
+
+        inner_guard.state = Waiting;
+        let handle = sys::get_handle(&inner_guard.child);
+        drop(inner_guard);
+
+        let noreap_result = sys::wait_deadline_without_reaping(handle, Some(deadline));
+
+        inner_guard = self.inner.lock().unwrap();
+        inner_guard.state = NotWaiting;
+        self.condvar.notify_all();
+
+        match noreap_result {
+            Ok(()) => Ok(Some(
+                inner_guard
+                    .try_wait_and_reap()?
+                    .expect("the child should have exited"),
+            )),
+            Err(e) => {
+                if e.raw_os_error() == Some(WAIT_TIMEOUT as i32) {
+                    Ok(None)
+                } else {
+                    Err(e)
+                }
+            }
+        }
     }
 
     /// Send a kill signal to the child. On Unix this sends SIGKILL, and you
