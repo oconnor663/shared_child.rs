@@ -250,6 +250,46 @@ impl SharedChild {
             .expect("the child should have exited"))
     }
 
+    /// Wait for the child to exit, blocking the current thread, and return its exit status. Or if
+    /// the timeout passes before then, return `Ok(None)`.
+    #[cfg(feature = "timeout")]
+    pub fn wait_timeout(&self, timeout: std::time::Duration) -> io::Result<Option<ExitStatus>> {
+        let deadline = std::time::Instant::now() + timeout;
+        self.wait_deadline(deadline)
+    }
+
+    /// Wait for the child to exit, blocking the current thread, and return its exit status. Or if
+    /// the deadline passes before then, return `Ok(None)`.
+    #[cfg(feature = "timeout")]
+    #[cfg(unix)]
+    pub fn wait_deadline(&self, deadline: std::time::Instant) -> io::Result<Option<ExitStatus>> {
+        // Unix doesn't support waiting on a child with a timeout, so we have to emulate that by
+        // handling the SIGCHLD signal.
+        let mut sigchld_waiter = sigchld::Waiter::new()?;
+        loop {
+            if let Some(status) = self.try_wait()? {
+                return Ok(Some(status));
+            }
+            if std::time::Instant::now() > deadline {
+                return Ok(None);
+            }
+            // Note that we check the child before we wait here. The opposite order is incorrect,
+            // because we could miss SIGCHLD and wait forever.
+            sigchld_waiter.wait_deadline(deadline)?;
+        }
+    }
+
+    #[cfg(feature = "timeout")]
+    #[cfg(windows)]
+    pub fn wait_deadline(&self, deadline: std::time::Instant) -> io::Result<Option<ExitStatus>> {
+        // This is a Windows-only function, so we don't need to worry about the handle becoming
+        // "dangling" while we don't hold the mutex. It will only become dangling after self is
+        // dropped, which can't happen while we hold &self.
+        let handle = sys::get_handle(&self.inner.lock().unwrap().child);
+        sys::wait_deadline_without_reaping(handle, deadline)?;
+        self.try_wait()
+    }
+
     /// Return the child's exit status if it has already exited. If the child is
     /// still running, return `Ok(None)`.
     pub fn try_wait(&self) -> io::Result<Option<ExitStatus>> {
@@ -352,6 +392,7 @@ mod tests {
     use std::error::Error;
     use std::process::{Command, Stdio};
     use std::sync::Arc;
+    use std::time::{Duration, Instant};
 
     // Python isn't available on some Unix platforms, e.g. Android, so we need this instead.
     #[cfg(unix)]
@@ -368,17 +409,24 @@ mod tests {
 
     // Python isn't available on some Unix platforms, e.g. Android, so we need this instead.
     #[cfg(unix)]
-    pub fn sleep_forever_cmd() -> Command {
+    pub fn sleep_cmd(duration: Duration) -> Command {
         let mut cmd = Command::new("sleep");
-        cmd.arg("1000000");
+        cmd.arg(format!("{}", duration.as_secs_f32()));
         cmd
     }
 
     #[cfg(not(unix))]
-    pub fn sleep_forever_cmd() -> Command {
+    pub fn sleep_cmd(duration: Duration) -> Command {
         let mut cmd = Command::new("python");
-        cmd.arg("-c").arg("import time; time.sleep(1000000)");
+        cmd.arg("-c").arg(format!(
+            "import time; time.sleep({})",
+            duration.as_secs_f32()
+        ));
         cmd
+    }
+
+    pub fn sleep_forever_cmd() -> Command {
+        sleep_cmd(Duration::from_secs(1000000))
     }
 
     // Python isn't available on some Unix platforms, e.g. Android, so we need this instead.
@@ -402,6 +450,59 @@ mod tests {
         assert!(id > 0);
         let status = child.wait().unwrap();
         assert_eq!(status.code().unwrap(), 0);
+    }
+
+    #[test]
+    #[cfg(feature = "timeout")]
+    fn test_wait_timeout() {
+        let short_child = SharedChild::spawn(&mut sleep_cmd(Duration::from_millis(100))).unwrap();
+        let status = short_child
+            .wait_timeout(Duration::from_secs(1))
+            .expect("no IO error")
+            .expect("did not time out");
+        assert_eq!(status.code().unwrap(), 0);
+        // Waiting on a child that's already exited succeeds immediately, regardless of the
+        // timeout.
+        short_child
+            .wait_timeout(Duration::from_millis(0))
+            .expect("no IO error")
+            .expect("did not time out");
+        short_child
+            .wait_timeout(Duration::from_millis(1))
+            .expect("no IO error")
+            .expect("did not time out");
+
+        let long_child = SharedChild::spawn(&mut sleep_forever_cmd()).unwrap();
+        let status = long_child
+            .wait_timeout(Duration::from_millis(100))
+            .expect("no IO error");
+        assert!(status.is_none(), "timed out");
+    }
+
+    #[test]
+    #[cfg(feature = "timeout")]
+    fn test_wait_deadline() {
+        let short_child = SharedChild::spawn(&mut sleep_cmd(Duration::from_millis(100))).unwrap();
+        let status = short_child
+            .wait_deadline(Instant::now() + Duration::from_secs(1))
+            .expect("no IO error")
+            .expect("did not time out");
+        assert_eq!(status.code().unwrap(), 0);
+        // Waiting on a child that's already exited succeeds immediately, regardless of the
+        // deadline.
+        short_child
+            .wait_deadline(Instant::now() + Duration::from_millis(0))
+            .expect("no IO error")
+            .expect("did not time out");
+        short_child
+            .wait_deadline(Instant::now() + Duration::from_millis(1))
+            .expect("no IO error")
+            .expect("did not time out");
+
+        let long_child = SharedChild::spawn(&mut sleep_forever_cmd()).unwrap();
+        let deadline = Instant::now() + Duration::from_millis(100);
+        let status = long_child.wait_deadline(deadline).expect("no IO error");
+        assert!(status.is_none(), "timed out");
     }
 
     #[test]
@@ -543,7 +644,6 @@ mod tests {
         // This was a failing test when I first committed it. Most of the time it would fail after
         // a few hundred iterations, but sometimes it took thousands. Default to one second so that
         // the tests don't take too long, but use an env var to configure a really big run in CI.
-        use std::time::{Duration, Instant};
         let mut test_duration_secs: u64 = 1;
         if let Ok(test_duration_secs_str) = std::env::var("SHARED_CHILD_RACE_TEST_SECONDS") {
             dbg!(&test_duration_secs_str);

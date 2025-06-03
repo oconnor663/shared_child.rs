@@ -1,4 +1,5 @@
 use std::io;
+use std::mem::MaybeUninit;
 use std::process::Child;
 
 // A handle on Unix is just the PID.
@@ -8,15 +9,15 @@ pub fn get_handle(child: &Child) -> Handle {
     Handle(child.id())
 }
 
-// This blocks until a child exits, without reaping the child.
+// This blocks until the child exits, without reaping the child.
 pub fn wait_without_reaping(handle: Handle) -> io::Result<()> {
     loop {
+        let mut siginfo = MaybeUninit::zeroed();
         let ret = unsafe {
-            let mut siginfo = std::mem::zeroed();
             libc::waitid(
                 libc::P_PID,
                 handle.0 as libc::id_t,
-                &mut siginfo,
+                siginfo.as_mut_ptr(),
                 libc::WEXITED | libc::WNOWAIT,
             )
         };
