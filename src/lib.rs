@@ -287,6 +287,26 @@ impl SharedChild {
         inner_guard.try_wait_and_reap()
     }
 
+    #[cfg(feature = "timeout")]
+    pub fn wait_timeout(&self, timeout: std::time::Duration) -> io::Result<Option<ExitStatus>> {
+        let deadline = std::time::Instant::now() + timeout;
+        self.wait_deadline(deadline)
+    }
+
+    #[cfg(feature = "timeout")]
+    pub fn wait_deadline(&self, deadline: std::time::Instant) -> io::Result<Option<ExitStatus>> {
+        let mut waiter = sigchld::Waiter::new()?;
+        loop {
+            if let Some(status) = self.try_wait()? {
+                return Ok(Some(status));
+            }
+            if std::time::Instant::now() > deadline {
+                return Ok(None);
+            }
+            waiter.wait_deadline(deadline)?;
+        }
+    }
+
     /// Send a kill signal to the child. On Unix this sends SIGKILL, and you
     /// should call `wait` afterwards to avoid leaving a zombie. If the process
     /// has already been waited on, this returns `Ok(())` and does nothing.

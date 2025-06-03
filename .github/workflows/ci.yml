@@ -10,8 +10,6 @@ on:
 env:
   RUSTFLAGS: "-D warnings"
   RUST_BACKTRACE: "1"
-  # Set a very long test duration for test_wait_try_wait_race.
-  SHARED_CHILD_RACE_TEST_SECONDS: 300
 
 jobs:
   cargo_tests:
@@ -29,3 +27,8 @@ jobs:
       with:
         toolchain: ${{ matrix.rust_channel }}
     - run: cargo test
+      env:
+        # Set a very long test duration for test_wait_try_wait_race.
+        SHARED_CHILD_RACE_TEST_SECONDS: 300
+    - run: cargo test --no-default-features
+    - run: cargo test --all-features
