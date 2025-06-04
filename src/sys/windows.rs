@@ -2,7 +2,7 @@ use std::io;
 use std::os::windows::io::{AsRawHandle, RawHandle};
 use std::process::Child;
 use std::time::Instant;
-use windows_sys::Win32::Foundation::{HANDLE, WAIT_OBJECT_0};
+use windows_sys::Win32::Foundation::{HANDLE, WAIT_OBJECT_0, WAIT_TIMEOUT};
 use windows_sys::Win32::System::Threading::{WaitForSingleObject, INFINITE};
 
 pub struct Handle(RawHandle);
@@ -19,13 +19,16 @@ pub fn get_handle(child: &Child) -> Handle {
 // basic wait on Windows doesn't reap. The main difference is that this can be
 // called without &mut Child.
 pub fn wait_without_reaping(handle: Handle) -> io::Result<()> {
-    wait_deadline_without_reaping(handle, None)
+    let exited = wait_deadline_without_reaping(handle, None)?;
+    assert!(exited, "timeout is None");
+    Ok(())
 }
 
+// Returns true if the child has exited, or false if the deadline passed.
 pub fn wait_deadline_without_reaping(
     handle: Handle,
     maybe_deadline: Option<Instant>,
-) -> io::Result<()> {
+) -> io::Result<bool> {
     let timeout_ms: u32 = if let Some(deadline) = maybe_deadline {
         let timeout = deadline.saturating_duration_since(Instant::now());
         // Convert to milliseconds, rounding *up*. (That way we don't repeatedly sleep for 0ms when
@@ -37,9 +40,9 @@ pub fn wait_deadline_without_reaping(
         INFINITE
     };
     let wait_ret = unsafe { WaitForSingleObject(handle.0 as HANDLE, timeout_ms) };
-    if wait_ret != WAIT_OBJECT_0 {
-        Err(io::Error::last_os_error())
-    } else {
-        Ok(())
+    match wait_ret {
+        WAIT_OBJECT_0 => Ok(true),
+        WAIT_TIMEOUT => Ok(false),
+        _ => Err(io::Error::last_os_error()),
     }
 }
