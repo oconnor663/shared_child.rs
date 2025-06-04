@@ -309,7 +309,75 @@ impl SharedChild {
 
     #[cfg(all(windows, feature = "timeout"))]
     pub fn wait_deadline(&self, deadline: std::time::Instant) -> io::Result<Option<ExitStatus>> {
-        todo!()
+        use windows_sys::Win32::Foundation::WAIT_TIMEOUT;
+
+        // Grab the mutex and check whether another thread is already
+        // responsible for waiting on the child. If so we park on the
+        // condition variable, but only until the deadline expires.
+        let mut inner_guard = self.inner.lock().unwrap();
+        loop {
+            match inner_guard.state {
+                // No other thread is waiting yet, so we'll become the waiter.
+                NotWaiting => break,
+                // Someone else is waiting. Wait on the condvar with a timeout
+                // and bail out if it fires.
+                Waiting => {
+                    if std::time::Instant::now() >= deadline {
+                        return Ok(None);
+                    }
+                    let timeout = deadline.saturating_duration_since(std::time::Instant::now());
+                    let (guard, wait_res) =
+                        self.condvar.wait_timeout(inner_guard, timeout).unwrap();
+                    inner_guard = guard;
+                    if wait_res.timed_out() {
+                        return Ok(None);
+                    }
+                }
+                // The child already exited; return its status.
+                Exited(status) => return Ok(Some(status)),
+            }
+        }
+
+        // We've become the designated waiter. Before releasing the lock do a
+        // non-blocking check in case the child has already exited.
+        if let Some(status) = inner_guard.try_wait_and_reap()? {
+            return Ok(Some(status));
+        }
+        if std::time::Instant::now() >= deadline {
+            return Ok(None);
+        }
+
+        // The child is still running and we still have time. Mark ourselves as
+        // waiting and release the lock so that kill() and friends can proceed.
+        inner_guard.state = Waiting;
+        let handle = sys::get_handle(&inner_guard.child);
+        drop(inner_guard);
+
+        // Do the actual blocking wait with the timeout.
+        let noreap_result = sys::wait_deadline_without_reaping(handle, Some(deadline));
+
+        // Retake the lock, wake any other threads, and return to the NotWaiting
+        // state before we do any further work.
+        inner_guard = self.inner.lock().unwrap();
+        inner_guard.state = NotWaiting;
+        self.condvar.notify_all();
+
+        // If the wait succeeded, reap the child. If it timed out, translate the
+        // Windows WAIT_TIMEOUT code into Ok(None).
+        match noreap_result {
+            Ok(()) => Ok(Some(
+                inner_guard
+                    .try_wait_and_reap()?
+                    .expect("the child should have exited"),
+            )),
+            Err(e) => {
+                if e.raw_os_error() == Some(WAIT_TIMEOUT as i32) {
+                    Ok(None)
+                } else {
+                    Err(e)
+                }
+            }
+        }
     }
 
     /// Send a kill signal to the child. On Unix this sends SIGKILL, and you
