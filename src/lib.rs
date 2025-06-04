@@ -309,8 +309,6 @@ impl SharedChild {
 
     #[cfg(all(windows, feature = "timeout"))]
     pub fn wait_deadline(&self, deadline: std::time::Instant) -> io::Result<Option<ExitStatus>> {
-        use windows_sys::Win32::Foundation::WAIT_TIMEOUT;
-
         // Grab the mutex and check whether another thread is already
         // responsible for waiting on the child. If so we park on the
         // condition variable, but only until the deadline expires.
@@ -364,20 +362,8 @@ impl SharedChild {
 
         // If the wait succeeded, reap the child. If it timed out, translate the
         // Windows WAIT_TIMEOUT code into Ok(None).
-        match noreap_result {
-            Ok(()) => Ok(Some(
-                inner_guard
-                    .try_wait_and_reap()?
-                    .expect("the child should have exited"),
-            )),
-            Err(e) => {
-                if e.raw_os_error() == Some(WAIT_TIMEOUT as i32) {
-                    Ok(None)
-                } else {
-                    Err(e)
-                }
-            }
-        }
+        noreap_result?;
+        inner_guard.try_wait_and_reap()
     }
 
     /// Send a kill signal to the child. On Unix this sends SIGKILL, and you
