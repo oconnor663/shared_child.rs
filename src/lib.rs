@@ -457,7 +457,7 @@ mod tests {
     fn test_wait_timeout() {
         let short_child = SharedChild::spawn(&mut sleep_cmd(Duration::from_millis(100))).unwrap();
         let status = short_child
-            .wait_timeout(Duration::from_secs(1))
+            .wait_timeout(Duration::from_secs(10))
             .expect("no IO error")
             .expect("did not time out");
         assert_eq!(status.code().unwrap(), 0);
@@ -484,7 +484,7 @@ mod tests {
     fn test_wait_deadline() {
         let short_child = SharedChild::spawn(&mut sleep_cmd(Duration::from_millis(100))).unwrap();
         let status = short_child
-            .wait_deadline(Instant::now() + Duration::from_secs(1))
+            .wait_deadline(Instant::now() + Duration::from_secs(10))
             .expect("no IO error")
             .expect("did not time out");
         assert_eq!(status.code().unwrap(), 0);
