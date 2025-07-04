@@ -578,11 +578,13 @@ mod tests {
         // There are ominous reports (https://bugs.python.org/issue10812) of a
         // broken waitid implementation on OSX, which might hang forever if it
         // tries to wait on a child that's already exited.
-        let child = true_cmd().spawn().unwrap();
+        let mut child = true_cmd().spawn().unwrap();
         sys::wait_noreap(sys::get_handle(&child)).unwrap();
         // At this point the child has definitely exited. Wait again to test
         // that a second wait doesn't block.
         sys::wait_noreap(sys::get_handle(&child)).unwrap();
+        // Clean up the child to avoid leaving a zombie.
+        child.wait().unwrap();
     }
 
     #[test]
