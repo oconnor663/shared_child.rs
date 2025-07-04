@@ -71,10 +71,10 @@ pub fn try_wait_noreap(handle: Handle) -> io::Result<bool> {
     } else {
         // This should be impossible if we called waitid correctly. But it will
         // show up on macOS if we forgot to zero the siginfo_t above, for example.
-        Err(io::Error::new(
-            io::ErrorKind::Other,
-            format!("unexpected si_signo from waitid: {}", siginfo.si_signo),
-        ))
+        Err(io::Error::other(format!(
+            "unexpected si_signo from waitid: {}",
+            siginfo.si_signo
+        )))
     }
 }
 

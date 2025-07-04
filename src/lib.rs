@@ -260,7 +260,7 @@ impl SharedChild {
     ) -> io::Result<Option<ExitStatus>> {
         match inner_guard.state {
             // The child has already been reaped. Return its saved exit status.
-            Exited(exit_status) => return Ok(Some(exit_status)),
+            Exited(exit_status) => Ok(Some(exit_status)),
             // There are no other blocking waiters, so it's safe to (potentially) reap the child
             // and free the child PID with std::process::Child::try_wait.
             NotWaiting => {
@@ -552,7 +552,7 @@ mod tests {
         // The child will handle that signal asynchronously, so we check it
         // repeatedly in a busy loop.
         let mut maybe_status = None;
-        while let None = maybe_status {
+        while maybe_status.is_none() {
             maybe_status = child.try_wait().unwrap();
         }
         assert!(maybe_status.is_some());
@@ -709,9 +709,7 @@ mod tests {
             let test_time_so_far = Instant::now().saturating_duration_since(test_start);
             assert!(
                 try_wait_ret.is_some(),
-                "encountered the race condition after {:?} ({} iterations)",
-                test_time_so_far,
-                iterations,
+                "encountered the race condition after {test_time_so_far:?} ({iterations} iterations)",
             );
             iterations += 1;
 
