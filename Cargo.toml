@@ -9,6 +9,7 @@ readme = "README.md"
 description = "a library for using child processes from multiple threads"
 keywords = ["command", "process", "child", "subprocess"]
 categories = ["os"]
+rust-version = "1.74"
 edition = "2021"
 
 [target.'cfg(not(windows))'.dependencies]
