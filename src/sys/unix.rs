@@ -83,12 +83,18 @@ pub fn try_wait_noreap(handle: Handle) -> io::Result<bool> {
 pub fn wait_deadline_noreap(handle: Handle, deadline: Instant) -> io::Result<bool> {
     let mut sigchld_waiter = sigchld::Waiter::new()?;
     loop {
+        // This order of operations...
+        //   1. Read the clock.
+        //   2. Check the child.
+        //   3. Enforce the deadline.
+        // ...makes us more robust to random scheduler delays between step 2 and step 3.
+        let now = Instant::now();
         // Has the child exited?
         if try_wait_noreap(handle)? {
             return Ok(true);
         }
         // Has the deadline passed?
-        if deadline < Instant::now() {
+        if deadline < now {
             return Ok(false);
         }
         // Wait for the next SIGCHLD and check again. Note that this returns immediately if a
