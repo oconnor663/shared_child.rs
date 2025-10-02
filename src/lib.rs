@@ -39,7 +39,7 @@
 //!
 //! // Spawn a child that will just sleep for a long time,
 //! // and put it in an Arc to share between threads.
-//! let mut command = Command::new("python");
+//! let mut command = Command::new("python3");
 //! command.arg("-c").arg("import time; time.sleep(1000000000)");
 //! let shared_child = SharedChild::spawn(&mut command).unwrap();
 //! let child_arc = Arc::new(shared_child);
@@ -379,7 +379,7 @@ mod tests {
 
     #[cfg(not(unix))]
     pub fn true_cmd() -> Command {
-        let mut cmd = Command::new("python");
+        let mut cmd = Command::new("python3");
         cmd.arg("-c").arg("");
         cmd
     }
@@ -394,7 +394,7 @@ mod tests {
 
     #[cfg(not(unix))]
     pub fn sleep_cmd(duration: Duration) -> Command {
-        let mut cmd = Command::new("python");
+        let mut cmd = Command::new("python3");
         cmd.arg("-c").arg(format!(
             "import time; time.sleep({})",
             duration.as_secs_f32()
@@ -414,7 +414,7 @@ mod tests {
 
     #[cfg(not(unix))]
     pub fn cat_cmd() -> Command {
-        let mut cmd = Command::new("python");
+        let mut cmd = Command::new("python3");
         cmd.arg("-c").arg("");
         cmd
     }
