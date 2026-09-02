@@ -415,7 +415,8 @@ mod tests {
     #[cfg(not(unix))]
     pub fn cat_cmd() -> Command {
         let mut cmd = Command::new("python3");
-        cmd.arg("-c").arg("");
+        cmd.arg("-c");
+        cmd.arg("import sys; sys.stdout.write(sys.stdin.read())");
         cmd
     }
 
@@ -611,7 +612,6 @@ mod tests {
 
     #[test]
     fn test_new() -> Result<(), Box<dyn Error>> {
-        // Spawn a short-lived child.
         let mut command = cat_cmd();
         command.stdin(Stdio::piped());
         command.stdout(Stdio::null());
