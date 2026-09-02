@@ -52,7 +52,6 @@ pub fn wait_deadline_noreap(handle: Handle, deadline: std::time::Instant) -> io:
         .try_into()
         .unwrap_or(u32::MAX);
     let wait_ret = unsafe { WaitForSingleObject(handle.0 as HANDLE, timeout_ms) };
-    use windows_sys::Win32::Foundation::WAIT_TIMEOUT;
     match wait_ret {
         WAIT_OBJECT_0 => Ok(true),
         WAIT_TIMEOUT => Ok(false),
