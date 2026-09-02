@@ -13,7 +13,7 @@ rust-version = "1.74"
 edition = "2021"
 
 [target.'cfg(not(windows))'.dependencies]
-libc = "0.2.42"
+libc = "0.2.152"
 sigchld = { version = "0.2.3", optional = true }
 
 [target.'cfg(windows)'.dependencies]
