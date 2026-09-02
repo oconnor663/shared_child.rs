@@ -19,10 +19,11 @@ jobs:
       fail-fast: false
       matrix:
         os: ["ubuntu-latest", "macOS-latest", "windows-latest"]
-        rust_channel: [stable, beta, nightly]
+        # Rust 1.74 is the MSRV.
+        rust_channel: ["1.74", stable, beta, nightly]
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
     - uses: dtolnay/rust-toolchain@master
       with:
         toolchain: ${{ matrix.rust_channel }}
