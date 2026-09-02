@@ -24,13 +24,11 @@ concurrently. Windows has actually always supported this, by preventing PID
 reuse while there are still open handles to a child process. This library
 wraps `std::process::Child` for concurrent use, backed by these APIs.
 
-Compatibility note: The `libc` crate doesn't currently support `waitid` on
-NetBSD or OpenBSD, or on older versions of OSX. There [might also
-be](https://bugs.python.org/msg167016) some version of OSX where the
-`waitid` function exists but is broken. We can add a "best effort"
-workaround using `waitpid` for these platforms as we run into them. Please
-[file an issue](https://github.com/oconnor663/shared_child.rs/issues/new) if
-you hit this.
+Compatibility note: There are some Unix-like platforms that don't support
+`waitid`. We can add best-effort workarounds using `waitpid` for these
+platforms as needed. Please [file an
+issue](https://github.com/oconnor663/shared_child.rs/issues/new) if you hit
+this.
 
 ## Example
 
@@ -41,7 +39,7 @@ use std::sync::Arc;
 
 // Spawn a child that will just sleep for a long time,
 // and put it in an Arc to share between threads.
-let mut command = Command::new("python");
+let mut command = Command::new("python3");
 command.arg("-c").arg("import time; time.sleep(1000000000)");
 let shared_child = SharedChild::spawn(&mut command).unwrap();
 let child_arc = Arc::new(shared_child);
