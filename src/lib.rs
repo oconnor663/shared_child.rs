@@ -178,8 +178,14 @@ impl SharedChild {
     ///
     /// This polls the child at least once, and if the child has already exited it will return
     /// `Ok(Some(_))` even if the timeout is zero.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `Instant::now() + timeout` overflows.
     #[cfg(feature = "timeout")]
     pub fn wait_timeout(&self, timeout: Duration) -> io::Result<Option<ExitStatus>> {
+        // `Instant` doesn't currently support saturating operations, so this addition can panic.
+        // See https://internals.rust-lang.org/t/instant-systemtime-min-max/21375.
         let deadline = std::time::Instant::now() + timeout;
         self.wait_deadline(deadline)
     }
