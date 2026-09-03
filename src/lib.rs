@@ -134,6 +134,16 @@ impl SharedChild {
 
     /// Wait for the child to exit, blocking the current thread, and return its
     /// exit status.
+    ///
+    /// Note that unlike the [`wait`] and [`wait_with_output`] methods on `std::process::Child`,
+    /// waiting on a `SharedChild` does _not_ automatically close the child's standard input pipe
+    /// (if any). One thread might wait on a `SharedChild` while another thread calls
+    /// [`take_stdin`][Self::take_stdin] and writes to it, and the order in which those threads run
+    /// doesn't matter.
+    ///
+    /// [`wait`]: https://doc.rust-lang.org/nightly/std/process/struct.Child.html#method.wait
+    /// [`wait_with_output`]: https://doc.rust-lang.org/nightly/std/process/struct.Child.html#method.wait_with_output
+    /// [`piped`]: https://doc.rust-lang.org/nightly/std/process/struct.Stdio.html#method.piped
     pub fn wait(&self) -> io::Result<ExitStatus> {
         // Start by taking the inner lock, but note that we need to release it before waiting, or
         // else we'd block .try_wait(), .wait_deadline(), and .kill().
