@@ -215,6 +215,13 @@ impl SharedChild {
                 // deadline passes. Spurious wakeups are acceptable here.
                 Waiting => {
                     let timeout = deadline.saturating_duration_since(Instant::now());
+                    // XXX: Our `wait_deadline_noreap` function in `sys/windows.rs` supports
+                    // durations longer than `u32::MAX - 1` ms (~49.7 days) by waiting repeatedly
+                    // in a loop. However, the `Condvar` implementation in the standard library
+                    // doesn't do a similar loop, and large timeouts here behave like `INFINITE`:
+                    // https://github.com/rust-lang/rust/blob/1.98.1/library/std/src/sys/pal/windows/mod.rs#L240-L254
+                    // Given that the API accepts a `Duration`, I'd rather let the standard library
+                    // fix this eventually (if anyone cares) instead of working around it here.
                     inner_guard = self.condvar.wait_timeout(inner_guard, timeout).unwrap().0;
                 }
                 // There are no other blocking waiters. Proceed to the blocking wait.

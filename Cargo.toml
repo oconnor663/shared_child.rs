@@ -24,3 +24,7 @@ windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_
 # that by handling the SIGCHLD signal.
 timeout = ["dep:sigchld"]
 default = ["timeout"]
+
+[[example]]
+name = "timeout"
+required-features = ["timeout"]

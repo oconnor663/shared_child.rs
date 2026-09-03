@@ -41,20 +41,40 @@ pub fn try_wait_noreap(handle: Handle) -> io::Result<bool> {
     }
 }
 
+// Return `true` if the child exits before the deadline, otherwise `false`.
+//
 // Again there's no such thing as "reaping" a child process on Windows, and these function names is
 // just for consistency with the Unix side of things.
 #[cfg(feature = "timeout")]
 pub fn wait_deadline_noreap(handle: Handle, deadline: std::time::Instant) -> io::Result<bool> {
-    let timeout = deadline.saturating_duration_since(std::time::Instant::now());
-    // Convert to milliseconds, rounding *up*. (That way we don't repeatedly sleep for 0ms when
-    // we're close to the timeout.)
-    let timeout_ms = (timeout.as_nanos().saturating_add(999_999) / 1_000_000)
-        .try_into()
-        .unwrap_or(u32::MAX);
-    let wait_ret = unsafe { WaitForSingleObject(handle.0 as HANDLE, timeout_ms) };
-    match wait_ret {
-        WAIT_OBJECT_0 => Ok(true),
-        WAIT_TIMEOUT => Ok(false),
-        _ => Err(io::Error::last_os_error()),
+    // If `dwMilliseconds` is `u32::MAX`, `WaitForSingleObject` interprets that as `INFINITE`, so
+    // the maximum non-infinite timeout is `u32::MAX - 1`. See:
+    // https://docs.rs/windows-sys/latest/windows_sys/Win32/System/Threading/constant.INFINITE.html
+    const MAX_DWMILLISECONDS: u32 = u32::MAX - 1;
+
+    // `MAX_DWMILLISECONDS` is about 49.7 days. For timeouts longer than that, we need to loop. We
+    // don't have a unit test that exercises this, so to double check changes here, artificially
+    // shorten the maximum and put in some prints.
+    loop {
+        let timeout = deadline.saturating_duration_since(std::time::Instant::now());
+
+        // Convert to milliseconds, rounding *up*. (That way we don't repeatedly sleep for 0ms when
+        // we're close to the timeout.)
+        let timeout_ms = timeout.as_nanos().saturating_add(999_999) / 1_000_000;
+
+        // Cap the timeout and call `WaitForSingleObject`.
+        let capped_wait_ms = std::cmp::min(timeout_ms, MAX_DWMILLISECONDS as u128) as u32;
+        let wait_ret = unsafe { WaitForSingleObject(handle.0 as HANDLE, capped_wait_ms) };
+        match wait_ret {
+            WAIT_OBJECT_0 => return Ok(true),
+            WAIT_TIMEOUT => {
+                if (capped_wait_ms as u128) < timeout_ms {
+                    // We weren't able to do the whole wait. Keep looping.
+                    continue;
+                }
+                return Ok(false);
+            }
+            _ => return Err(io::Error::last_os_error()),
+        }
     }
 }

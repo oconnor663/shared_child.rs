@@ -78,7 +78,8 @@ pub fn try_wait_noreap(handle: Handle) -> io::Result<bool> {
     }
 }
 
-// This blocks until either the child exits or the deadline passes, without reaping the child.
+// Blocks until either the child exits or the deadline passes, without reaping the child. Return
+// `true` if the child exited before the deadline.
 #[cfg(feature = "timeout")]
 pub fn wait_deadline_noreap(handle: Handle, deadline: Instant) -> io::Result<bool> {
     let mut sigchld_waiter = sigchld::Waiter::new()?;
